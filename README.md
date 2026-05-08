@@ -45,25 +45,6 @@ Running `xcodecli` with no arguments prints help. Use `bridge` for raw passthrou
 ./xcodecli serve --session-id 11111111-1111-1111-1111-111111111111
 ```
 
-Fastest workflow tutor for a real request:
-
-```bash
-./xcodecli agent guide "build Unicody"
-./xcodecli agent guide "read KeyboardState.swift"
-./xcodecli agent guide --json
-```
-
-`agent guide` is read-only. It maps a user request to the recommended tool workflow, shows why that order is correct, and prints the exact next commands to run.
-
-Fastest safe live onboarding demo:
-
-```bash
-./xcodecli agent demo
-./xcodecli agent demo --json
-```
-
-`agent demo` is read-only. It reuses `doctor`, discovers the live tool catalog, safely calls `XcodeListWindows`, and prints the next commands to try.
-
 Run environment diagnostics:
 
 ```bash
@@ -158,36 +139,13 @@ printf '{}' | ./xcodecli tool call XcodeListWindows --json-stdin
 Inspect the LaunchAgent used by `tools` commands:
 
 ```bash
-./xcodecli agent guide "build Unicody"
-./xcodecli agent demo
 ./xcodecli agent status
 ./xcodecli agent status --json
 ./xcodecli agent stop
 ./xcodecli agent uninstall
 ```
 
-## LLM agent workflow playbook
-
-Start here when you already know the task:
-
-```bash
-./xcodecli agent guide "build Unicody"
-./xcodecli agent guide "run tests for Unicody"
-./xcodecli agent guide "read KeyboardState.swift"
-./xcodecli agent guide "search for AdManager"
-./xcodecli agent guide "update KeyboardState.swift"
-./xcodecli agent guide "diagnose build errors"
-```
-
-Notes:
-- `agent guide` is the fastest way to learn the right tool sequence for a concrete request.
-- `agent demo` is the safest way to discover live windows and tool availability before you pick a workflow.
-- Many Xcode MCP tools require a `tabIdentifier`; both `agent guide` and `agent demo` help you understand when and why `XcodeListWindows` comes first.
-- `tool inspect` is still available, but it should usually be a fallback for schema reassurance rather than the first step.
-
-## Manual low-level flow
-
-If you want the raw building blocks instead of guidance:
+## LLM agent workflow
 
 ```bash
 ./xcodecli tools list
@@ -196,12 +154,11 @@ If you want the raw building blocks instead of guidance:
 ./xcodecli tool call BuildProject --json '{"tabIdentifier":"<tabIdentifier from above>"}'
 ```
 
-After `agent guide` and `agent demo`, the next likely usability improvement is a higher-level task command. This repository does **not** add that abstraction yet.
+Many Xcode MCP tools require a `tabIdentifier`; calling `XcodeListWindows` first surfaces the live identifiers you can pass to subsequent tools.
 
 ## Agent onboarding
 
 - Quick rules for first-time agents: `AGENTS.md`
-- Detailed walkthrough: `docs/agent-quickstart.md`
 
 ## Git workflow
 
@@ -230,9 +187,8 @@ The project now uses stable semantic versioning tags with the following release 
 - `--timeout` is the **request timeout**. It includes first-use LaunchAgent startup, `mcpbridge` session initialization, and any auth prompts.
 - The default **mcpbridge session idle timeout** is `24h`. It controls how long pooled `mcpbridge` sessions stay alive while idle.
 - Active requests are **not** interrupted by the `mcpbridge session idle timeout`.
-- `doctor`, `agent demo`, and `agent guide` will warn when the registered LaunchAgent binary path is relative, missing, or differs from the current binary because those drifts are common causes of LaunchAgent bootstrap failures and unexpected re-authorization churn.
+- `doctor` will warn when the registered LaunchAgent binary path is relative, missing, or differs from the current binary because those drifts are common causes of LaunchAgent bootstrap failures and unexpected re-authorization churn.
 - `agent status` surfaces the same stale-registration warnings in human-readable mode so you can triage LaunchAgent drift without running the full doctor flow first.
 - `doctor --json` now includes structured `recommendations` alongside raw checks so automation can act on common remediation paths directly.
-- `agent guide` and `agent demo` now echo relevant doctor recommendations in their human-readable environment sections so first-run triage does not require a separate doctor pass.
-- Default request timeouts are `60s` for `tools list`, `tool inspect`, `agent guide`, and `agent demo`; `tool call` uses tool-specific defaults (`60s` list/read/search/log, `120s` update/write/refresh, `30m` build/test, `5m` fallback).
+- Default request timeouts are `60s` for `tools list` and `tool inspect`; `tool call` uses tool-specific defaults (`60s` list/read/search/log, `120s` update/write/refresh, `30m` build/test, `5m` fallback).
 - `tool call` accepts exactly one payload source: inline `--json`, `--json @file`, or `--json-stdin`.

@@ -6,8 +6,6 @@
 - Release build script: `./scripts/build-swift.sh`
 - Go implementation tests: `go test ./...` when touching `./cmd/xcodecli/` or `./internal/`
 - Agent onboarding:
-  - `./xcodecli agent guide "<intent>"`
-  - `./xcodecli agent demo --json`
   - `./xcodecli doctor --json`
 - MCP client registration:
   - `./xcodecli mcp codex`

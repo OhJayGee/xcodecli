@@ -12,16 +12,14 @@ Use this repository when you need a CLI bridge into Xcode's MCP tools.
 - Use this file for collaboration rules and quick recovery flow, not as a second source of truth for platform constraints.
 
 ## First-time flow
-1. `./xcodecli agent guide "build Unicody"`
-2. `./xcodecli agent demo --json`
-3. `./xcodecli doctor --json`
-4. `./xcodecli tools list --json`
-5. `./xcodecli tool call <name> --json '{...}'`
+1. `./xcodecli doctor --json`
+2. `./xcodecli tools list --json`
+3. `./xcodecli tool inspect <name> --json`
+4. `./xcodecli tool call <name> --json '{...}'`
 
 ## Collaboration rules
-- Prefer `agent guide` before guessing a tool sequence.
-- Use `agent demo` for safe live discovery.
-- Fall back to `tool inspect` only when you need schema reassurance.
+- Use `tools list` to discover the live catalog before guessing a tool name.
+- Use `tool inspect` when you need schema reassurance.
 - Keep payloads as JSON objects:
   - inline: `--json '{...}'`
   - file: `--json @payload.json`
