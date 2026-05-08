@@ -9,7 +9,6 @@ struct XcodeCLI: AsyncParsableCommand {
         version: Version.line,
         subcommands: [
             VersionCommand.self,
-            UpdateCommand.self,
             BridgeCommand.self,
             ServeCommand.self,
             DoctorCommand.self,

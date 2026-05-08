@@ -108,12 +108,6 @@ struct CLIParsingTests {
         #expect(result.exitCode == 0)
     }
 
-    @Test("update --help exits 0")
-    func updateHelp() async throws {
-        let result = try runCLI(["update", "--help"])
-        #expect(result.exitCode == 0)
-    }
-
     // MARK: - Error Cases
 
     @Test("unknown command exits non-zero")
