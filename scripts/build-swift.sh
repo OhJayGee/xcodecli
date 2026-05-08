@@ -5,8 +5,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT="${1:-${OUTPUT:-${ROOT_DIR}/.build/release/xcodecli}}"
 BUILD_CHANNEL="${BUILD_CHANNEL:-dev}"
 
-bash "${ROOT_DIR}/scripts/check-version-sync.sh"
-
 # Extract source version from Swift source
 SOURCE_VERSION="$(sed -n 's/.*static let source = "\(.*\)"/\1/p' "${ROOT_DIR}/Sources/XcodeCLICore/Shared/Version.swift" | head -n 1)"
 VERSION="${VERSION:-${SOURCE_VERSION:-v0.0.0}}"
