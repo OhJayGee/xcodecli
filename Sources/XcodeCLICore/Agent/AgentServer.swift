@@ -71,8 +71,14 @@ public final class AgentServer: @unchecked Sendable {
     // MARK: - Run Server
 
     public func run() async throws {
-        // Create support directory
-        try FileManager.default.createDirectory(atPath: cfg.paths.supportDir, withIntermediateDirectories: true, attributes: nil)
+        // Create support directory with mode 0o700 (only this user can read/write/exec).
+        try FileManager.default.createDirectory(
+            atPath: cfg.paths.supportDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        // Defensive: also chmod in case the directory pre-existed with a wider mode.
+        chmod(cfg.paths.supportDir, 0o700)
 
         // Write binary identity
         if let execPath = try? resolveExecutablePath() {
@@ -80,11 +86,29 @@ public final class AgentServer: @unchecked Sendable {
             try writeBinaryIdentity(binaryIdentityPath(cfg.paths), identity: identity)
         }
 
+        // Verify parent-dir ownership and mode before bind. If we own the parent dir
+        // with 0o700, no other user can drop a symlink at socketPath; the symlink-
+        // replacement attack collapses to "the user attacks themselves."
+        guard let parentMeta = lstatSocketMetadata(at: cfg.paths.supportDir),
+              parentMeta.uid == getuid(),
+              (parentMeta.mode & 0o777) == 0o700 else {
+            throw XcodeCLIError.agentUnavailable(
+                stage: "preflight",
+                underlying: "agent support dir \(cfg.paths.supportDir) is not owned by this user with mode 0700"
+            )
+        }
+
         // Remove stale socket
         let fm = FileManager.default
         if fm.fileExists(atPath: cfg.paths.socketPath) {
             try fm.removeItem(atPath: cfg.paths.socketPath)
         }
+
+        // Belt-and-suspenders: with the parent-dir guard above, this umask is
+        // technically redundant, but it makes the intent explicit and protects
+        // the brief window before the post-bind lstat verification.
+        let previousMask = umask(0o077)
+        defer { umask(previousMask) }
 
         // Create Unix socket
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -112,6 +136,21 @@ public final class AgentServer: @unchecked Sendable {
         guard chmod(socketPath, 0o600) == 0 else {
             Darwin.close(fd)
             throw XcodeCLIError.agentUnavailable(stage: "chmod", underlying: "chmod \(socketPath): \(String(cString: strerror(errno)))")
+        }
+
+        // Post-bind verification: lstat (not stat) so a symlink at the path is
+        // detected. The file at socketPath must be a real socket owned by us
+        // with mode 0o600.
+        guard let meta = lstatSocketMetadata(at: socketPath),
+              meta.isSocket,
+              meta.uid == getuid(),
+              (meta.mode & 0o777) == 0o600 else {
+            Darwin.close(fd)
+            try? fm.removeItem(atPath: socketPath)
+            throw XcodeCLIError.agentUnavailable(
+                stage: "verify",
+                underlying: "socket file at \(socketPath) failed post-bind verification (type/owner/mode)"
+            )
         }
 
         guard Darwin.listen(fd, 5) == 0 else {

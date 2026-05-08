@@ -21,6 +21,23 @@ func setUnixSocketPath(_ addr: inout sockaddr_un, to path: String) -> Bool {
     return !truncated
 }
 
+/// Metadata captured from `lstat` for a socket file path.
+struct SocketFileMetadata {
+    let isSocket: Bool
+    let mode: mode_t   // mode_t includes file-type bits in S_IFMT and permission bits in 0o777
+    let uid: uid_t
+}
+
+/// `lstat` the path and return its metadata. Returns nil if the path does not exist
+/// or `lstat` fails. Uses lstat (not stat) so a symlink at the path is reported as
+/// a symlink, not as the target's type.
+func lstatSocketMetadata(at path: String) -> SocketFileMetadata? {
+    var st = stat()
+    guard lstat(path, &st) == 0 else { return nil }
+    let isSocket = (st.st_mode & S_IFMT) == S_IFSOCK
+    return SocketFileMetadata(isSocket: isSocket, mode: st.st_mode, uid: st.st_uid)
+}
+
 /// Write all bytes to a file descriptor, handling partial writes and EINTR.
 /// Returns true on success, false on failure.
 func writeAllToFD(_ fd: Int32, _ data: Data) -> Bool {
