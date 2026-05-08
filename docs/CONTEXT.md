@@ -12,9 +12,7 @@
 
 ## Key Files
 - `agent-quickstart.md`: first-time discovery path for agents and automation using `xcodecli`.
-- `releasing.md`: canonical local release, GitHub Release, and Homebrew flow.
-- `implementation-spec.md`: full technical contract for reimplementation and agent reference (English).
-- `implementation-spec.kr.md`: Korean translation of `implementation-spec.md`.
+- `authorization-troubleshooting.md` / `authorization-troubleshooting.kr.md`: MCP authorization reuse, same-session behavior, and repeated-prompt recovery (English / Korean).
 
 ## Local Rules
 - Keep these docs user-facing and procedural.
@@ -26,17 +24,10 @@
 - CLI onboarding changes should review:
   - [docs/agent-quickstart.md](./agent-quickstart.md)
   - [README.md](../README.md)
-  - [cmd/xcodecli/cli.go](../cmd/xcodecli/cli.go) help text
-- Release flow changes should review:
-  - [docs/releasing.md](./releasing.md)
-  - [scripts/release.sh](../scripts/release.sh)
-  - [scripts/release_homebrew.sh](../scripts/release_homebrew.sh)
-  - version examples in [README.md](../README.md)
 
 ## Canonical Source Notes
 - [README.md](../README.md) is the repository landing page.
 - [docs/agent-quickstart.md](./agent-quickstart.md) is the detailed first-time agent walkthrough.
-- [docs/releasing.md](./releasing.md) is the detailed release procedure.
 - Context documents should link to these docs, not replace them.
 
 ## Verification Notes

@@ -13,9 +13,6 @@
   - `./xcodecli mcp codex`
   - `./xcodecli mcp claude`
   - `./xcodecli mcp gemini`
-- Release basics:
-  - follow `./docs/releasing.md`
-  - use `./scripts/release_homebrew.sh <tag> --dry-run` before push/publish paths
 
 ## Global Architecture Decisions
 - `xcodecli` is a macOS CLI wrapper around `xcrun mcpbridge`.

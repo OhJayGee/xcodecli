@@ -4,70 +4,16 @@
 
 ## Install
 
-### Homebrew
-
-Install from the shared `oozoofrog/tap` formula:
+Requires macOS 15+ with Xcode (Swift toolchain).
 
 ```bash
-brew tap oozoofrog/tap
-brew install oozoofrog/tap/xcodecli
+git clone https://github.com/oozoofrog/xcodecli.git
+cd xcodecli
+swift build -c release
+cp .build/release/xcodecli ~/.local/bin/   # or any directory on $PATH
 ```
 
-Upgrade later with:
-
-```bash
-brew update
-brew upgrade oozoofrog/tap/xcodecli
-```
-
-### Direct install from GitHub
-
-Install the current `main` branch directly from GitHub:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/oozoofrog/xcodecli/main/scripts/install.sh | bash
-```
-
-Install a specific tag or branch:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/oozoofrog/xcodecli/main/scripts/install.sh | bash -s -- --ref v1.0.0
-curl -fsSL https://raw.githubusercontent.com/oozoofrog/xcodecli/main/scripts/install.sh | bash -s -- --ref main
-```
-
-Install into a custom directory:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/oozoofrog/xcodecli/main/scripts/install.sh | bash -s -- --bin-dir "$HOME/.local/bin"
-```
-
-### Install from a local checkout
-
-Build and install from the checked-out repository:
-
-```bash
-./scripts/install.sh
-./scripts/install.sh --bin-dir "$HOME/.local/bin"
-```
-
-The install script:
-- builds from the current checkout when run locally
-- downloads and builds the requested GitHub ref when run via `curl | bash`
-- installs `xcodecli` into `$HOME/.local/bin` by default
-- verifies that the installed binary runs successfully
-- checks whether your login shell can find `xcodecli` on `PATH` and prints shell-specific guidance if it cannot
-
-Upgrade an existing install in place:
-
-```bash
-xcodecli update
-```
-
-`xcodecli update` delegates to `brew upgrade oozoofrog/tap/xcodecli` for Homebrew installs. Other installs download the latest GitHub release, rebuild it, and replace the current executable.
-
-The shared `oozoofrog/tap` repository can host multiple formulas and casks. `xcodecli` is published there as `Formula/xcodecli.rb`.
-
-Releases are cut locally on macOS via `./scripts/release.sh vX.Y.Z`, but only from `main` when `origin` points to `oozoofrog/xcodecli` and `HEAD` exactly matches `origin/main`. For a full procedure, dry-run example, or tap-only recovery path, see `docs/releasing.md` and `./scripts/release_homebrew.sh`.
+To update later: `git pull && swift build -c release && cp .build/release/xcodecli ~/.local/bin/`.
 
 For MCP authorization reuse, same-session behavior, and repeated-prompt recovery, see:
 - English: `docs/authorization-troubleshooting.md`
@@ -271,7 +217,6 @@ The project now uses stable semantic versioning tags with the following release 
 - `v1.0.1`, `v1.0.2`, ...: patch releases for bug fixes, CI/test hardening, documentation corrections, and internal refactors that do not intentionally expand the public CLI surface.
 - `v1.1.0`, `v1.2.0`, ...: minor releases for new commands, new flags, new output modes, default-behavior expansions, or materially new LaunchAgent / MCP capabilities.
 - Breaking CLI behavior is avoided when possible. Any unavoidable breaking change should ship in a new major release and must be called out explicitly in `CHANGELOG.md` and the GitHub Release notes.
-- Releases should be cut from `main` only after the local checks in `./scripts/release.sh vX.Y.Z` are ready to pass end-to-end.
 - Tags should remain annotated `vMAJOR.MINOR.PATCH` tags, and GitHub Releases should continue to use generated notes unless a release needs hand-written upgrade guidance.
 - The active maintenance line is `v1.1.x`. Small fixes should prefer the next patch tag on that line before opening a new minor series.
 
@@ -289,6 +234,5 @@ The project now uses stable semantic versioning tags with the following release 
 - `agent status` surfaces the same stale-registration warnings in human-readable mode so you can triage LaunchAgent drift without running the full doctor flow first.
 - `doctor --json` now includes structured `recommendations` alongside raw checks so automation can act on common remediation paths directly.
 - `agent guide` and `agent demo` now echo relevant doctor recommendations in their human-readable environment sections so first-run triage does not require a separate doctor pass.
-- `update` now refuses obviously unstable executable paths (for example Swift build outputs, temporary directories, and external-volume paths) so in-place upgrades only happen from stable install locations.
 - Default request timeouts are `60s` for `tools list`, `tool inspect`, `agent guide`, and `agent demo`; `tool call` uses tool-specific defaults (`60s` list/read/search/log, `120s` update/write/refresh, `30m` build/test, `5m` fallback).
 - `tool call` accepts exactly one payload source: inline `--json`, `--json @file`, or `--json-stdin`.
