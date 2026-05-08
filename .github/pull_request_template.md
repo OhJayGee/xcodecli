@@ -2,7 +2,7 @@
 - 
 
 ## Testing
-- [ ] `go test ./...`
+- [ ] `swift test`
 - [ ] Manual smoke test performed
 
 ## Checklist

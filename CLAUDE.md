@@ -4,7 +4,6 @@
 - Swift package build: `swift build`
 - Swift package tests: `swift test`
 - Release build script: `./scripts/build-swift.sh`
-- Go implementation tests: `go test ./...` when touching `./cmd/xcodecli/` or `./internal/`
 - Agent onboarding:
   - `./xcodecli doctor --json`
 - MCP client registration:
@@ -14,10 +13,8 @@
 
 ## Global Architecture Decisions
 - `xcodecli` is a macOS CLI wrapper around `xcrun mcpbridge`.
-- The repository currently contains two code trees:
-  - the Swift package in `./Package.swift` and `./Sources/`
-  - the Go CLI/runtime tree in `./cmd/xcodecli/` and `./internal/`
-- The operator-friendly workflows (`doctor`, `mcp`, `tools`, `tool`, `agent`) build on top of the raw bridge/runtime layer across these implementations.
+- `xcodecli` is a Swift package; the build entrypoint is `./scripts/build-swift.sh`.
+- The operator-friendly workflows (`doctor`, `mcp`, `tools`, `tool`, `agent`) build on top of the raw bridge/runtime layer.
 
 ## Environment Constraints
 - macOS only.
@@ -32,8 +29,6 @@
 
 ## Context Tree Entry Points
 - `./AGENTS.md`: portable collaboration and triage rules.
-- `./cmd/xcodecli/CONTEXT.md`: CLI parsing, help/output contracts, and command-level change coupling.
-- `./internal/CONTEXT.md`: package boundaries for `agent`, `bridge`, `doctor`, `mcp`, and `update`.
 - `./scripts/CONTEXT.md`: build/install/release script responsibilities and safety rules.
 - `./docs/CONTEXT.md`: canonical long-form user documentation and example-sync rules.
 
