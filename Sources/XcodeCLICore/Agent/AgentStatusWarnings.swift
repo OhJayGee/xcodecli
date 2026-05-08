@@ -27,7 +27,7 @@ public func deriveAgentStatusNextSteps(_ status: AgentStatus, warnings: [String]
     }
 
     if status.plistInstalled && !status.running && !status.socketReachable {
-        steps.append("run `xcodecli agent demo` or `xcodecli tools list --json` to bootstrap the LaunchAgent again")
+        steps.append("run `xcodecli tools list --json` to bootstrap the LaunchAgent again")
     }
 
     return steps

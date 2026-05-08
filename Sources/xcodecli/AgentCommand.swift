@@ -11,8 +11,6 @@ struct AgentCommand: AsyncParsableCommand {
             StopSubcommand.self,
             UninstallSubcommand.self,
             RunSubcommand.self,
-            GuideSubcommand.self,
-            DemoSubcommand.self,
         ]
     )
 
@@ -67,67 +65,6 @@ struct AgentCommand: AsyncParsableCommand {
             sigintSource.cancel()
             sigtermSource.cancel()
             sighupSource.cancel()
-        }
-    }
-
-    struct GuideSubcommand: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(
-            commandName: "guide",
-            abstract: "Show workflow guidance for a given intent"
-        )
-
-        @Argument(help: "Intent or workflow name")
-        var intent: String = "catalog"
-
-        @Flag(name: .long, help: "Print as JSON")
-        var json = false
-
-        @Option(name: .customLong("timeout"), help: "Request timeout in seconds")
-        var timeout: Int = 60
-
-        @Option(name: .customLong("xcode-pid"), help: "Override MCP_XCODE_PID")
-        var xcodePID: String?
-
-        @Option(name: .customLong("session-id"), help: "Override MCP_XCODE_SESSION_ID")
-        var sessionID: String?
-
-        @Flag(name: .customLong("debug"), help: "Emit debug logs")
-        var debug = false
-
-        func run() async throws {
-            try await runAgentGuide(
-                intent: intent, json: json, timeout: timeout,
-                xcodePID: xcodePID, sessionID: sessionID, debug: debug
-            )
-        }
-    }
-
-    struct DemoSubcommand: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(
-            commandName: "demo",
-            abstract: "Run a demonstration of agent capabilities"
-        )
-
-        @Flag(name: .long, help: "Print as JSON")
-        var json = false
-
-        @Option(name: .customLong("timeout"), help: "Request timeout in seconds")
-        var timeout: Int = 60
-
-        @Option(name: .customLong("xcode-pid"), help: "Override MCP_XCODE_PID")
-        var xcodePID: String?
-
-        @Option(name: .customLong("session-id"), help: "Override MCP_XCODE_SESSION_ID")
-        var sessionID: String?
-
-        @Flag(name: .customLong("debug"), help: "Emit debug logs")
-        var debug = false
-
-        func run() async throws {
-            try await runAgentDemo(
-                json: json, timeout: timeout,
-                xcodePID: xcodePID, sessionID: sessionID, debug: debug
-            )
         }
     }
 

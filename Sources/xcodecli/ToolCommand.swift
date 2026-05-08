@@ -2,6 +2,33 @@ import ArgumentParser
 import Foundation
 import XcodeCLICore
 
+func findToolByName(_ tools: [JSONValue], _ name: String) -> JSONValue? {
+    tools.first { tool in
+        if case .object(let obj) = tool, case .string(let toolName) = obj["name"] {
+            return toolName == name
+        }
+        return false
+    }
+}
+
+func toolName(_ tool: JSONValue) -> String {
+    guard case .object(let obj) = tool,
+          case .string(let name) = obj["name"]
+    else {
+        return ""
+    }
+    return name
+}
+
+func toolDescription(_ tool: JSONValue) -> String {
+    guard case .object(let obj) = tool,
+          case .string(let description) = obj["description"]
+    else {
+        return ""
+    }
+    return description
+}
+
 struct ToolCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "tool",

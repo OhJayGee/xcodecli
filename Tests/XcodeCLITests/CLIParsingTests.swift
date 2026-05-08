@@ -72,18 +72,6 @@ struct CLIParsingTests {
         #expect(result.exitCode == 0)
     }
 
-    @Test("agent guide --help exits 0")
-    func agentGuideHelp() async throws {
-        let result = try runCLI(["agent", "guide", "--help"])
-        #expect(result.exitCode == 0)
-    }
-
-    @Test("agent demo --help exits 0")
-    func agentDemoHelp() async throws {
-        let result = try runCLI(["agent", "demo", "--help"])
-        #expect(result.exitCode == 0)
-    }
-
     @Test("mcp config --help exits 0")
     func mcpConfigHelp() async throws {
         let result = try runCLI(["mcp", "config", "--help"])
