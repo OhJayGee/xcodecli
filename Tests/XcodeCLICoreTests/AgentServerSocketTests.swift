@@ -57,4 +57,24 @@ struct AgentServerSocketTests {
         try sendStopRequest(socketPath: paths.socketPath)
         _ = try? await runTask.value
     }
+
+    @Test("same-UID ping succeeds end-to-end")
+    func sameUIDPingSucceeds() async throws {
+        let tempDir = try makeTempSupportDir()
+        defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+        let paths = makePaths(in: tempDir)
+        let cfg = AgentServerConfig(paths: paths, label: "test.xcodecli.agent", idleTimeout: 60, baseEnv: [:], debug: false)
+        let server = AgentServer(config: cfg)
+        let runTask = Task { try await server.run() }
+
+        await waitForFile(paths.socketPath, deadline: Date().addingTimeInterval(2.0))
+        #expect(FileManager.default.fileExists(atPath: paths.socketPath))
+
+        let response = try sendRequest(socketPath: paths.socketPath, json: "{\"method\":\"ping\"}")
+        #expect(response.contains("\"status\""))   // ping returns the runtime status payload, not an error
+
+        try sendStopRequest(socketPath: paths.socketPath)
+        _ = try? await runTask.value
+    }
 }

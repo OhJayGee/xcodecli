@@ -38,6 +38,15 @@ func lstatSocketMetadata(at path: String) -> SocketFileMetadata? {
     return SocketFileMetadata(isSocket: isSocket, mode: st.st_mode, uid: st.st_uid)
 }
 
+/// Returns the effective UID of the peer connected to `fd`, or nil on error.
+/// Wraps Darwin's getpeereid() (declared in <unistd.h>; available on Darwin
+/// without an extra import beyond `import Darwin`).
+func peerUID(of fd: Int32) -> uid_t? {
+    var uid: uid_t = 0
+    var gid: gid_t = 0
+    return getpeereid(fd, &uid, &gid) == 0 ? uid : nil
+}
+
 /// Write all bytes to a file descriptor, handling partial writes and EINTR.
 /// Returns true on success, false on failure.
 func writeAllToFD(_ fd: Int32, _ data: Data) -> Bool {

@@ -174,12 +174,19 @@ public final class AgentServer: @unchecked Sendable {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let acceptThread = Thread {
                 defer { continuation.resume() }
+                let myUID = getuid()
                 while true {
                     let clientFD = Darwin.accept(fd, nil, nil)
                     if clientFD < 0 {
                         if self.isClosed() { return }
                         if errno == EINTR { continue }
                         if errno == EBADF || errno == EINVAL { return }
+                        continue
+                    }
+                    // Peer-UID check: reject any connection whose UID does not
+                    // match ours. Fail closed on lookup failure (peerUID == nil).
+                    guard let peer = peerUID(of: clientFD), peer == myUID else {
+                        Darwin.close(clientFD)
                         continue
                     }
                     self.connectionStarted()
