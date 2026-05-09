@@ -77,4 +77,26 @@ struct AgentServerSocketTests {
         try sendStopRequest(socketPath: paths.socketPath)
         _ = try? await runTask.value
     }
+
+    @Test("oversized request returns an error response and closes")
+    func oversizedRequestRejected() async throws {
+        let tempDir = try makeTempSupportDir()
+        defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+        let paths = makePaths(in: tempDir)
+        let cfg = AgentServerConfig(paths: paths, label: "test.xcodecli.agent", idleTimeout: 60, baseEnv: [:], debug: false)
+        let server = AgentServer(config: cfg)
+        let runTask = Task { try await server.run() }
+
+        await waitForFile(paths.socketPath, deadline: Date().addingTimeInterval(2.0))
+        #expect(FileManager.default.fileExists(atPath: paths.socketPath))
+
+        // 2 MiB of 'A' with no newline — exceeds the 1 MiB cap.
+        let bigBlob = String(repeating: "A", count: 2 * 1024 * 1024)
+        let response = try sendRawAndReadResponse(socketPath: paths.socketPath, raw: bigBlob)
+        #expect(response.contains("exceeds") || response.contains("error"))
+
+        try sendStopRequest(socketPath: paths.socketPath)
+        _ = try? await runTask.value
+    }
 }

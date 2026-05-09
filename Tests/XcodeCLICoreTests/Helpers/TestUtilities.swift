@@ -67,11 +67,16 @@ func makeTempSupportDir(prefix: String = "xcodecli-agent-test") throws -> String
 }
 
 /// Connect a Unix-domain client socket to `socketPath`. Returns the connected fd.
+/// Sets SO_NOSIGPIPE so the test process does not die from SIGPIPE if the
+/// server closes the connection mid-write (e.g. oversized-request test).
 private func connectAgentSocket(_ socketPath: String) throws -> Int32 {
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else {
         throw AgentSocketTestError.socketCreateFailed(String(cString: strerror(errno)))
     }
+    var noSigPipe: Int32 = 1
+    _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+
     var addr = sockaddr_un()
     addr.sun_family = sa_family_t(AF_UNIX)
     guard setUnixSocketPath(&addr, to: socketPath) else {
@@ -92,6 +97,9 @@ private func connectAgentSocket(_ socketPath: String) throws -> Int32 {
 }
 
 /// Write all bytes of `data` to `fd`, retrying on EINTR / partial writes.
+/// Returns silently if the peer closes the connection mid-write (EPIPE) —
+/// the caller is expected to read whatever response the server already
+/// pushed before closing.
 private func writeAll(_ fd: Int32, _ data: Data) throws {
     try data.withUnsafeBytes { ptr in
         guard let base = ptr.baseAddress else { return }
@@ -100,6 +108,7 @@ private func writeAll(_ fd: Int32, _ data: Data) throws {
             let n = Darwin.write(fd, base + written, ptr.count - written)
             if n < 0 {
                 if errno == EINTR { continue }
+                if errno == EPIPE { return }
                 throw AgentSocketTestError.writeFailed(String(cString: strerror(errno)))
             }
             if n == 0 { throw AgentSocketTestError.writeFailed("write returned 0") }

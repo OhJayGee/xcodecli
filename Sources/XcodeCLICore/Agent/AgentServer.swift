@@ -3,6 +3,15 @@ import Foundation
 import Darwin
 #endif
 
+// MARK: - Request Limits
+
+/// Maximum size in bytes of a single agent request line. Exceeding this
+/// closes the connection with an error response.
+private let maxAgentRequestBytes = 1 * 1024 * 1024  // 1 MiB
+
+/// Per-read receive timeout for an accepted client connection.
+private let agentRequestReadTimeoutSeconds: Int = 5
+
 // MARK: - Server Configuration
 
 public struct AgentServerConfig: @unchecked Sendable {
@@ -212,7 +221,19 @@ public final class AgentServer: @unchecked Sendable {
             connectionFinished()
         }
 
-        // Read single line request on background queue
+        // Apply a receive timeout so a client cannot pin the read thread by
+        // opening a connection and never sending bytes.
+        var tv = timeval()
+        tv.tv_sec = agentRequestReadTimeoutSeconds
+        tv.tv_usec = 0
+        if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size)) != 0 {
+            cfg.errOut.write(Data("[warn] setsockopt SO_RCVTIMEO failed: \(String(cString: strerror(errno)))\n".utf8))
+        }
+
+        // Read single line request on background queue. Bound the buffered
+        // bytes at maxAgentRequestBytes so a client cannot stream forever
+        // without sending a newline.
+        let cap = maxAgentRequestBytes
         let data: Data = await withCheckedContinuation { cont in
             DispatchQueue.global().async {
                 var data = Data()
@@ -222,9 +243,15 @@ public final class AgentServer: @unchecked Sendable {
                     if n <= 0 { break }
                     data.append(contentsOf: buf[0..<n])
                     if data.contains(UInt8(ascii: "\n")) { break outer }
+                    if data.count > cap { break outer }
                 }
                 cont.resume(returning: data)
             }
+        }
+
+        if data.count > maxAgentRequestBytes {
+            writeResponse(fd, AgentResponse(error: "agent request exceeds \(maxAgentRequestBytes) bytes"))
+            return
         }
 
         guard let lineEnd = data.firstIndex(of: UInt8(ascii: "\n")) else {
