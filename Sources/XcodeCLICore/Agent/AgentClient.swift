@@ -134,16 +134,18 @@ public enum AgentClient {
             throw XcodeCLIError.agentUnavailable(stage: "connect", underlying: "connect to \(socketPath): \(String(cString: strerror(errno)))")
         }
 
-        if let timeoutMS = req.timeoutMS, timeoutMS > 0 {
-            var tv = timeval()
-            tv.tv_sec = Int(timeoutMS / 1000)
-            tv.tv_usec = Int32((timeoutMS % 1000) * 1000)
-            if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size)) != 0 {
-                FileHandle.standardError.write(Data("[warn] setsockopt SO_RCVTIMEO failed: \(String(cString: strerror(errno)))\n".utf8))
-            }
-            if setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size)) != 0 {
-                FileHandle.standardError.write(Data("[warn] setsockopt SO_SNDTIMEO failed: \(String(cString: strerror(errno)))\n".utf8))
-            }
+        // Always apply a socket timeout. If the request specifies one, honour
+        // it; otherwise fall back to `defaultAgentRPCTimeoutMS` so a wedged
+        // agent cannot pin the calling thread indefinitely in read/write.
+        let effectiveTimeoutMS = effectiveAgentRPCTimeoutMS(requested: req.timeoutMS)
+        var tv = timeval()
+        tv.tv_sec = Int(effectiveTimeoutMS / 1000)
+        tv.tv_usec = Int32((effectiveTimeoutMS % 1000) * 1000)
+        if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size)) != 0 {
+            FileHandle.standardError.write(Data("[warn] setsockopt SO_RCVTIMEO failed: \(String(cString: strerror(errno)))\n".utf8))
+        }
+        if setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size)) != 0 {
+            FileHandle.standardError.write(Data("[warn] setsockopt SO_SNDTIMEO failed: \(String(cString: strerror(errno)))\n".utf8))
         }
 
         var payload = try JSONEncoder().encode(req)
