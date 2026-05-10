@@ -17,6 +17,12 @@ public actor MCPClient {
     /// returned to a caller as a complete line. Access is serialized by the
     /// surrounding actor; `readEnvelope` is the only consumer.
     private var readBuffer: Data = Data()
+    /// Background task draining the child process's stderr. The reference is
+    /// kept on the actor so `close()`/`abort()` can `await` it after the
+    /// child exits, ensuring late-arriving stderr is folded into
+    /// `stderrBuffer` and (when debug is on) forwarded to `errOut` instead
+    /// of being silently dropped when the actor deallocates.
+    private var stderrTask: Task<Void, Never>?
 
     final class StderrBuffer: @unchecked Sendable {
         private let lock = NSLock()
@@ -88,22 +94,20 @@ public actor MCPClient {
 
         try process.run()
 
-        // Capture stderr in background
-        let buffer = stderrBuffer
-        let isDebug = debug
-        let errHandle = errOut
-        Task.detached {
-            while true {
-                let data = stderrPipe.fileHandleForReading.availableData
-                if data.isEmpty { break }
-                if let text = String(data: data, encoding: .utf8) {
-                    buffer.append(text)
-                    if isDebug {
-                        errHandle.write(Data("[debug] child stderr: \(text)".utf8))
-                    }
-                }
-            }
-        }
+        // Drain the child's stderr asynchronously. The previous
+        // implementation polled `availableData` in a tight `while true`
+        // loop, which can spin on partial reads and was never awaited at
+        // shutdown — meaning bytes the child wrote between `close()` and
+        // EOF were silently dropped. `drainStderrToBuffer` uses
+        // `FileHandle.bytes.lines`, which suspends until data is ready;
+        // storing the resulting task on the actor lets shutdown wait for
+        // it to finish.
+        self.stderrTask = drainStderrToBuffer(
+            handle: stderrPipe.fileHandleForReading,
+            buffer: stderrBuffer,
+            debug: debug,
+            errOut: errOut
+        )
     }
 
     /// Perform the MCP initialize handshake.
@@ -228,18 +232,26 @@ public actor MCPClient {
         return MCPCallResult(result: resultDict, isError: isError)
     }
 
-    /// Close the client gracefully.
-    public func close() {
+    /// Close the client gracefully. Waits for the child to exit and for the
+    /// background stderr drain to finish so any late-arriving diagnostics
+    /// reach `stderrBuffer`/`errOut` rather than getting dropped.
+    public func close() async {
         stdinPipe.fileHandleForWriting.closeFile()
         process.waitUntilExit()
+        await stderrTask?.value
+        stderrTask = nil
     }
 
-    /// Abort the client forcefully.
-    public func abort() {
+    /// Abort the client forcefully. Like `close()`, awaits the stderr drain
+    /// so we don't lose any messages the child wrote between termination
+    /// and EOF on the stderr pipe.
+    public func abort() async {
         stdinPipe.fileHandleForWriting.closeFile()
         if process.isRunning {
             process.terminate()
         }
+        await stderrTask?.value
+        stderrTask = nil
     }
 
     // MARK: - I/O
@@ -316,5 +328,43 @@ func readBufferedLine(
             throw XcodeCLIError.mcpInitializationFailed(reason: "child process closed stdout")
         }
         buffer.append(chunk)
+    }
+}
+
+/// Spawn a detached task that drains `handle` line by line, appending each
+/// line (including a trailing newline) to `buffer` and, when `debug` is
+/// enabled, forwarding it to `errOut` prefixed with `[debug] child stderr:`.
+///
+/// Uses `FileHandle.bytes.lines` so the underlying read suspends instead of
+/// busy-spinning — the original `availableData` loop returned immediately
+/// with an empty `Data` on partial reads and burned CPU in the meantime.
+///
+/// Returns the task so callers can `await task.value` during shutdown,
+/// guaranteeing that bytes the child wrote between termination and EOF on
+/// the stderr pipe still land in `buffer` instead of being dropped on the
+/// floor when the underlying actor deallocates.
+///
+/// Internal so `MCPClientStderrCaptureTests` can drive it directly with a
+/// `Pipe` rather than a real subprocess.
+func drainStderrToBuffer(
+    handle: FileHandle,
+    buffer: MCPClient.StderrBuffer,
+    debug: Bool,
+    errOut: FileHandle
+) -> Task<Void, Never> {
+    Task.detached {
+        do {
+            for try await line in handle.bytes.lines {
+                let withNewline = line + "\n"
+                buffer.append(withNewline)
+                if debug {
+                    errOut.write(Data("[debug] child stderr: \(withNewline)".utf8))
+                }
+            }
+        } catch {
+            // The reader throws on read failure (e.g. fd already closed
+            // due to abort). Treat as EOF — there's nothing actionable
+            // we can do beyond stopping the drain.
+        }
     }
 }
