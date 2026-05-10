@@ -2,6 +2,10 @@ import Foundation
 
 /// MCP client that communicates with xcrun mcpbridge via JSON-RPC over stdin/stdout.
 public actor MCPClient {
+    /// Read chunk size for the buffered stdout reader. 4 KiB matches a typical
+    /// pipe buffer page; larger payloads are accumulated across multiple reads.
+    private static let readChunkSize = 4096
+
     private let process: Process
     private let stdinPipe: Pipe
     private let stdoutPipe: Pipe
@@ -9,6 +13,10 @@ public actor MCPClient {
     private var nextID: Int64 = 1
     private let debug: Bool
     private let errOut: FileHandle
+    /// Buffer of bytes read from the child's stdout that have not yet been
+    /// returned to a caller as a complete line. Access is serialized by the
+    /// surrounding actor; `readEnvelope` is the only consumer.
+    private var readBuffer: Data = Data()
 
     final class StderrBuffer: @unchecked Sendable {
         private let lock = NSLock()
@@ -242,20 +250,8 @@ public actor MCPClient {
     }
 
     private func readEnvelope() throws -> RPCEnvelope {
-        let handle = stdoutPipe.fileHandleForReading
-
         while true {
-            var lineData = Data()
-            while true {
-                let byte = handle.readData(ofLength: 1)
-                if byte.isEmpty {
-                    throw XcodeCLIError.mcpInitializationFailed(reason: "child process closed stdout")
-                }
-                if byte[0] == UInt8(ascii: "\n") {
-                    break
-                }
-                lineData.append(byte)
-            }
+            let lineData = try readLineBuffered()
 
             guard let line = String(data: lineData, encoding: .utf8) else {
                 throw XcodeCLIError.mcpRPCError(code: -32700, message: "invalid UTF-8 in response")
@@ -268,5 +264,57 @@ public actor MCPClient {
 
             return try JSONLineCodec.decode(trimmed)
         }
+    }
+
+    /// Read one newline-terminated line from the child's stdout, buffering any
+    /// bytes that arrive past the newline for the next call. The returned
+    /// `Data` does not include the trailing `\n`.
+    private func readLineBuffered() throws -> Data {
+        try readBufferedLine(
+            from: stdoutPipe.fileHandleForReading,
+            buffer: &readBuffer,
+            chunkSize: MCPClient.readChunkSize
+        )
+    }
+}
+
+/// Read one newline-terminated line from `handle`, draining `buffer` first
+/// and refilling from the handle in `chunkSize` chunks when no newline is
+/// present. The returned `Data` does not include the trailing `\n`. Bytes
+/// that arrive past the newline are left in `buffer` for the next call.
+///
+/// Throws `XcodeCLIError.mcpInitializationFailed` on EOF — the message
+/// distinguishes a clean EOF from one that strands partial bytes in the
+/// buffer so diagnostics aren't ambiguous.
+///
+/// This is package-internal so that `MCPClientBufferedReadTests` can pin the
+/// behaviour without spawning a real `xcrun mcpbridge` child.
+func readBufferedLine(
+    from handle: FileHandle,
+    buffer: inout Data,
+    chunkSize: Int
+) throws -> Data {
+    let newline = UInt8(ascii: "\n")
+
+    while true {
+        if let nlIndex = buffer.firstIndex(of: newline) {
+            let line = buffer[buffer.startIndex..<nlIndex]
+            let after = buffer.index(after: nlIndex)
+            buffer = buffer.subdata(in: after..<buffer.endIndex)
+            return Data(line)
+        }
+
+        // `readData(ofLength:)` is the blocking variant: returns up to
+        // `length` bytes and returns an empty Data on EOF.
+        let chunk = handle.readData(ofLength: chunkSize)
+        if chunk.isEmpty {
+            if !buffer.isEmpty {
+                throw XcodeCLIError.mcpInitializationFailed(
+                    reason: "child process closed stdout with \(buffer.count) buffered bytes and no newline"
+                )
+            }
+            throw XcodeCLIError.mcpInitializationFailed(reason: "child process closed stdout")
+        }
+        buffer.append(chunk)
     }
 }
