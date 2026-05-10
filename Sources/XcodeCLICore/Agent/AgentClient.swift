@@ -85,28 +85,26 @@ public enum AgentClient {
     }
 
     /// Uninstall the agent.
+    ///
+    /// Stop / bootout failures are advisory and intentionally swallowed:
+    /// the agent may already be stopped or unloaded, in which case those
+    /// calls fail for benign reasons and an aggregated error message just
+    /// drowns out a real cleanup failure. The first removeItem failure
+    /// short-circuits and is returned directly so the caller sees the
+    /// actual obstacle (e.g. a permission denial on the plist).
     public static func uninstall() async throws {
-        var errors: [String] = []
-        do { try await stop() } catch { errors.append("stop: \(error.localizedDescription)") }
+        // Best-effort stop. Any error is benign — the user just wants the
+        // files gone, and the file removals below don't depend on a clean
+        // shutdown.
+        try? await stop()
 
         let paths = AgentPaths.defaultPaths()
         let label = AgentPaths.label
         let launchd = CommandLaunchd()
-        do { try await launchd.bootout(target: launchAgentServiceTarget(label: label)) } catch { errors.append("bootout: \(error.localizedDescription)") }
+        // Best-effort bootout, same reasoning as stop().
+        try? await launchd.bootout(target: launchAgentServiceTarget(label: label))
 
-        let fm = FileManager.default
-        for path in [paths.plistPath, paths.socketPath, paths.pidPath, paths.logPath] {
-            if fm.fileExists(atPath: path) {
-                do { try fm.removeItem(atPath: path) } catch { errors.append("remove \((path as NSString).lastPathComponent): \(error.localizedDescription)") }
-            }
-        }
-        if fm.fileExists(atPath: paths.supportDir) {
-            do { try fm.removeItem(atPath: paths.supportDir) } catch { errors.append("remove supportDir: \(error.localizedDescription)") }
-        }
-
-        if !errors.isEmpty {
-            throw XcodeCLIError.agentUnavailable(stage: "uninstall", underlying: errors.joined(separator: "; "))
-        }
+        try removeAgentFiles(paths: paths, fileManager: FileManager.default)
     }
 
     // MARK: - RPC Transport
@@ -299,4 +297,29 @@ func samePath(_ left: String, _ right: String) -> Bool {
     let l = (left as NSString).standardizingPath
     let r = (right as NSString).standardizingPath
     return l == r
+}
+
+// MARK: - Uninstall File Cleanup
+
+/// Remove the agent's on-disk artifacts, short-circuiting on the first
+/// failure. The previous implementation accumulated every error from every
+/// remove call and joined them — meaning a permission denial on
+/// `daemon.pid` would show up alongside (and be drowned out by) a
+/// "service not loaded" bootout error from earlier. Callers care about the
+/// first real obstruction; surface it directly.
+///
+/// Callers are responsible for the best-effort `stop`/`bootout` calls;
+/// those should be wrapped in `try?` so they don't reach here.
+///
+/// Internal-by-default so `AgentClientUninstallTests` can drive it with
+/// arbitrary paths instead of touching `~/Library`.
+func removeAgentFiles(paths: AgentPaths.Paths, fileManager: FileManager) throws {
+    for path in [paths.plistPath, paths.socketPath, paths.pidPath, paths.logPath] {
+        if fileManager.fileExists(atPath: path) {
+            try fileManager.removeItem(atPath: path)
+        }
+    }
+    if fileManager.fileExists(atPath: paths.supportDir) {
+        try fileManager.removeItem(atPath: paths.supportDir)
+    }
 }
