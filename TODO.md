@@ -45,20 +45,17 @@ Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240
 
 ## Medium
 
-### [ ] 8. Swift `MCPClient.readEnvelope` reads one byte at a time
-- **Location:** `Sources/XcodeCLICore/MCP/MCPClient.swift:246-270`
-- **Issue:** `readData(ofLength: 1)` in a tight loop — thousands of syscalls per tool response (file reads, build logs). Real perf regression.
-- **Fix:** Buffered read (`FileHandle.bytes`, `DispatchIO`, or read-and-split-on-newline).
+### [x] 8. Swift `MCPClient.readEnvelope` reads one byte at a time [RESOLVED — buffered reader (commit 0d1725a)]
+- **Location:** `Sources/XcodeCLICore/MCP/MCPClient.swift`
+- **Resolution:** Replaced the per-byte loop with a 4 KiB buffered reader (`readBufferedLine` helper + `readBuffer` field on the actor). Pinned by `Tests/XcodeCLICoreTests/MCPClientBufferedReadTests.swift`.
 
-### [ ] 9. Swift `AgentClient.doRPC` has no timeout fallback when `req.timeoutMS` is nil/0
-- **Location:** `Sources/XcodeCLICore/Agent/AgentClient.swift:155-173`
-- **Issue:** A wedged agent causes an indefinite hang; `Darwin.read()` never returns.
-- **Fix:** Apply a default `SO_RCVTIMEO`/`SO_SNDTIMEO` or wrap reads in a `Task` with a timeout.
+### [x] 9. Swift `AgentClient.doRPC` has no timeout fallback when `req.timeoutMS` is nil/0 [RESOLVED — finite default timeout always applied (commit 568b79c)]
+- **Location:** `Sources/XcodeCLICore/Agent/AgentClient.swift`
+- **Resolution:** `defaultAgentRPCTimeoutMS = 30_000` plus `effectiveAgentRPCTimeoutMS(requested:)` in `AgentService.swift`. `doRPC` always sets both `SO_RCVTIMEO` and `SO_SNDTIMEO`, so nil/0/negative `timeoutMS` falls back to 30s instead of hanging indefinitely. Pinned by `AgentClientTimeoutTests.swift`.
 
-### [ ] 10. Swift `MCPClient` stderr capture polls and is never awaited at shutdown
-- **Location:** `Sources/XcodeCLICore/MCP/MCPClient.swift:87-98`
-- **Issue:** Detached `Task` reads `availableData` in `while true`; can spin between partial reads, and stderr captured after termination is lost because the task is never awaited before `close`/`abort`.
-- **Fix:** Use `pipe.fileHandleForReading.bytes` and structured concurrency; await the task during shutdown.
+### [x] 10. Swift `MCPClient` stderr capture polls and is never awaited at shutdown [RESOLVED — async iteration + awaited at shutdown (commit 9dd4c1a)]
+- **Location:** `Sources/XcodeCLICore/MCP/MCPClient.swift`
+- **Resolution:** Replaced the `availableData` polling loop with `FileHandle.bytes.lines` async iteration. The capture task is stored on the actor and `await`ed during `close()` and `abort()`, so late-shutdown stderr is preserved. Pinned by `MCPClientStderrCaptureTests.swift`.
 
 ### [x] 11. Missing `--` separator before MCP server name for `claude` and `gemini` [RESOLVED — file deleted in Phase C (commit 292ad90)]
 - **Location:** `cmd/xcodecli/mcp_config.go:178-195`
@@ -112,10 +109,9 @@ Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240
 - **Location:** `cmd/xcodecli/main_test.go:1073-1143`
 - **Resolution:** Go test file no longer exists.
 
-### [ ] 23. Swift `AgentClient.uninstall` reports cleanup errors confusingly
-- **Location:** `Sources/XcodeCLICore/Agent/AgentClient.swift:88-109`
-- **Issue:** Continues removing files after errors and joins all messages — bootout failures appear in the final error even when file removal succeeded.
-- **Fix:** Return on first real removal failure; ignore `Stop`/`Bootout` errors.
+### [x] 23. Swift `AgentClient.uninstall` reports cleanup errors confusingly [RESOLVED — short-circuit on first removal failure (commit f509672)]
+- **Location:** `Sources/XcodeCLICore/Agent/AgentClient.swift`
+- **Resolution:** `stop()` and `bootout()` failures are silently swallowed (advisory). The new `removeAgentFiles(paths:fileManager:)` helper iterates plist → socket → pid → log → supportDir and rethrows the first failure directly, matching the original Go contract. Pinned by `AgentClientUninstallTests.swift`.
 
 ### [~] 24. Minor cleanups (group)
 - **Duplicate dedupe helpers** [RESOLVED — Go side deleted in Phase C]: `cmd/xcodecli/mcp_config.go:576-590` and `internal/agent/status_warnings.go:36-50` no longer exist.
@@ -144,7 +140,4 @@ Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240
 ## Suggested execution order (remaining items)
 
 1. **#7** — Swift session-lock parity gap.
-2. **#9** — agent client default timeout.
-3. **#8, #10** — MCP client perf and shutdown cleanliness.
-4. **#23** — uninstall error reporting.
-5. **#24** — `tool inspect` comment + doctor smoke-test defensive check.
+2. **#24** — `tool inspect` comment + doctor smoke-test defensive check.
