@@ -11,9 +11,10 @@ git clone https://github.com/oozoofrog/xcodecli.git
 cd xcodecli
 swift build -c release
 cp .build/release/xcodecli ~/.local/bin/   # or any directory on $PATH
+codesign -f -s - ~/.local/bin/xcodecli     # resign to prevent macOS SIGKILL (exit code 137)
 ```
 
-To update later: `git pull && swift build -c release && cp .build/release/xcodecli ~/.local/bin/`.
+To update later: `git pull && swift build -c release && cp .build/release/xcodecli ~/.local/bin/ && codesign -f -s - ~/.local/bin/xcodecli`.
 
 For MCP authorization reuse, same-session behavior, and repeated-prompt recovery, see:
 - English: `docs/authorization-troubleshooting.md`

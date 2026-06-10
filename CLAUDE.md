@@ -24,6 +24,7 @@
 - For release and Homebrew work, destructive steps come last and dry-run/check steps come first.
 - This repo lives on an external volume. macOS SIGKILL adhoc-signed binaries on external volumes. Always test built binaries via one of:
   - `cp .tmp/xcodecli /tmp/xcodecli && /tmp/xcodecli version`
+  - Resigning the copied binary: `codesign -f -s - <path>`
   - The Homebrew-installed binary at `/opt/homebrew/bin/xcodecli`
   - `swift build` + `swift run` (debug builds are not affected)
 
