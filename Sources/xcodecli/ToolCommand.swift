@@ -65,6 +65,8 @@ struct ToolCommand: AsyncParsableCommand {
                 xcodePID: xcodePID, sessionID: sessionID,
                 timeout: TimeInterval(timeout), debug: debug
             )
+            // MCP exposes schemas through tools/list, not a single-tool lookup.
+            // Xcode's catalog is small and fixed, so one list round-trip is intentional.
             let tools = try await AgentClient.listTools(request: request)
 
             guard let tool = findToolByName(tools, name) else {

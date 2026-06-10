@@ -9,11 +9,16 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 ### Changed
 - Release builds now derive their build channel from compiler configuration, and `scripts/build-swift.sh` no longer edits `Version.swift`.
 - The README now documents the stable `serve` -> LaunchAgent -> `mcpbridge` proxy model and uses integer timeout examples accepted by the CLI.
+- The README now includes client-specific setup for Claude Code, Codex, and Agy.
+- The completed audit record is now named `SECURITY_REVIEW.md` instead of `TODO.md`.
 
 ### Fixed
 - The MCP client now returns short framed responses while the pooled `mcpbridge` stdout pipe remains open, restoring reliable `tools list`, `tool inspect`, and `tool call` requests through the agent.
 - MCP client aliases, including `mcp codex`, now share the normal configuration path instead of terminating unexpectedly.
 - Same-session concurrency coverage now uses a deterministic fake bridge and exits cleanly.
+- The doctor smoke test now times out after two seconds and terminates the spawned child instead of hanging indefinitely.
+- Agent socket writes now suppress SIGPIPE when a client disconnects before reading its response.
+- `SystemProcessRunner` now redirects standard input to `FileHandle.nullDevice` when no custom stdin data is provided, preventing spawned subprocesses (like the `claude` CLI during `xcodecli mcp claude --install`) from inheriting the parent's standard input and hanging.
 
 ## [1.1.0] - 2026-03-29
 ### Added

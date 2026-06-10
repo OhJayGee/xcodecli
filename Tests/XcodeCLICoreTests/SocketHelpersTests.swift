@@ -39,4 +39,15 @@ struct SocketHelpersTests {
         let fd = pipe.fileHandleForWriting.fileDescriptor
         #expect(writeAllToFD(fd, Data()))
     }
+
+    @Test("writeAllToFD returns false without SIGPIPE when socket peer closes")
+    func closedSocketPeer() {
+        var sockets = [Int32](repeating: -1, count: 2)
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets) == 0)
+        guard sockets.allSatisfy({ $0 >= 0 }) else { return }
+        defer { Darwin.close(sockets[0]) }
+
+        Darwin.close(sockets[1])
+        #expect(!writeAllToFD(sockets[0], Data("response\n".utf8)))
+    }
 }

@@ -71,6 +71,45 @@ Generate MCP registration commands for supported clients:
 ./xcodecli mcp claude --install --json
 ```
 
+### Claude Code
+
+Register the stable installed binary and verify the entry:
+
+```bash
+xcodecli mcp claude --install
+claude mcp get xcodecli
+```
+
+### Codex
+
+Register the stable installed binary and verify the entry:
+
+```bash
+xcodecli mcp codex --install
+codex mcp get xcodecli
+```
+
+### Agy
+
+Agy discovers global MCP servers from `~/.gemini/config/mcp_config.json`.
+Merge this entry into that file, preserving any existing `mcpServers`. The
+`command` must be the absolute path reported by `command -v xcodecli`; `~` is
+not expanded because Agy launches the command directly.
+
+```json
+{
+  "mcpServers": {
+    "xcodecli": {
+      "command": "/Users/YOU/.local/bin/xcodecli",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+Restart Agy after changing the file. Agy builds without an `mcp` subcommand
+must be configured this way rather than through `xcodecli mcp ... --install`.
+
 Notes:
 - `mcp config` targets `xcodecli serve` by default so MCP clients reuse the LaunchAgent-backed pooled runtime.
 - Use `--mode bridge` if you explicitly want raw `xcodecli bridge` passthrough instead.
@@ -167,6 +206,10 @@ Many Xcode MCP tools require a `tabIdentifier`; calling `XcodeListWindows` first
 ## Agent onboarding
 
 - Quick rules for first-time agents: `AGENTS.md`
+
+## Security review
+
+- Completed security and code-quality findings: `SECURITY_REVIEW.md`
 
 ## Git workflow
 

@@ -20,6 +20,21 @@ struct MockProcessRunner: ProcessRunning {
     }
 }
 
+struct SmokeTimeoutProcessRunner: ProcessRunning {
+    func run(
+        _ command: String,
+        arguments: [String],
+        environment: [String: String]?,
+        workingDirectory: String?,
+        stdinData: Data?
+    ) async throws -> ProcessResult {
+        if arguments == ["mcpbridge"] {
+            try await Task.sleep(for: .seconds(60))
+        }
+        return ProcessResult(stdout: "", stderr: "", exitCode: 0)
+    }
+}
+
 @Suite("Doctor")
 struct DoctorTests {
     @Test("report with all checks OK is successful")
@@ -110,6 +125,26 @@ struct DoctorTests {
         let bridgeCheck = report.checks.first { $0.name == "xcrun mcpbridge --help" }
         #expect(bridgeCheck?.status == .info)
         #expect(bridgeCheck?.detail.contains("skipped") == true)
+    }
+
+    @Test("spawn smoke test reports its timeout before generic process errors")
+    func smokeTestTimeout() async {
+        let inspector = DoctorInspector(
+            processRunner: SmokeTimeoutProcessRunner(),
+            lookPath: { name in name == "xcrun" ? "/usr/bin/xcrun" : nil },
+            listProcesses: {
+                [XcodeProcess(
+                    pid: 101,
+                    command: "/Applications/Xcode.app/Contents/MacOS/Xcode"
+                )]
+            },
+            smokeTestTimeout: .milliseconds(20)
+        )
+
+        let report = await inspector.run(opts: DoctorOptions())
+        let smokeCheck = report.checks.first { $0.name == "spawn smoke test" }
+        #expect(smokeCheck?.status == .fail)
+        #expect(smokeCheck?.detail == "timed out waiting for xcrun mcpbridge to exit with closed stdin")
     }
 
     @Test("inspector warns when LaunchAgent registered binary path is relative")

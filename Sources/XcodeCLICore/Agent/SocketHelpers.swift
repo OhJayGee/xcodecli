@@ -54,7 +54,10 @@ func writeAllToFD(_ fd: Int32, _ data: Data) -> Bool {
         guard let base = ptr.baseAddress else { return false }
         var written = 0
         while written < ptr.count {
-            let n = Darwin.write(fd, base + written, ptr.count - written)
+            var n = Darwin.send(fd, base + written, ptr.count - written, MSG_NOSIGNAL)
+            if n < 0 && errno == ENOTSOCK {
+                n = Darwin.write(fd, base + written, ptr.count - written)
+            }
             if n < 0 {
                 if errno == EINTR { continue }
                 return false

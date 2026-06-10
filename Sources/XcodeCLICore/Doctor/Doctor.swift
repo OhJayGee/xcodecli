@@ -242,12 +242,18 @@ public struct DoctorOptions: Sendable {
 // MARK: - Inspector
 
 public struct DoctorInspector: Sendable {
+    private enum SmokeTestError: Error {
+        case timedOut
+    }
+
     private let processRunner: any ProcessRunning
     private let lookPath: @Sendable (String) async -> String?
     private let listProcesses: @Sendable () async throws -> [XcodeProcess]
+    private let smokeTestTimeout: Duration
 
     public init(processRunner: any ProcessRunning) {
         self.processRunner = processRunner
+        self.smokeTestTimeout = .seconds(2)
         self.lookPath = { @Sendable command in
             let paths = systemPATH()
             for dir in paths {
@@ -270,11 +276,13 @@ public struct DoctorInspector: Sendable {
     public init(
         processRunner: any ProcessRunning,
         lookPath: @escaping @Sendable (String) async -> String?,
-        listProcesses: @escaping @Sendable () async throws -> [XcodeProcess]
+        listProcesses: @escaping @Sendable () async throws -> [XcodeProcess],
+        smokeTestTimeout: Duration = .seconds(2)
     ) {
         self.processRunner = processRunner
         self.lookPath = lookPath
         self.listProcesses = listProcesses
+        self.smokeTestTimeout = smokeTestTimeout
     }
 
     public func run(opts: DoctorOptions) async -> DoctorReport {
@@ -470,12 +478,7 @@ public struct DoctorInspector: Sendable {
             )
             let startedAt = ContinuousClock.now
             do {
-                let result = try await processRunner.run(
-                    path, arguments: ["mcpbridge"],
-                    environment: smokeEnv,
-                    workingDirectory: nil,
-                    stdinData: Data() // empty stdin, closes immediately
-                )
+                let result = try await runSmokeTest(path: path, environment: smokeEnv)
                 let elapsed = ContinuousClock.now - startedAt
                 if result.exitCode == 0 {
                     checks.append(DoctorCheck(
@@ -488,6 +491,11 @@ public struct DoctorInspector: Sendable {
                         detail: formatCommandFailure(exitCode: result.exitCode, stderr: result.stderr, stdout: result.stdout)
                     ))
                 }
+            } catch SmokeTestError.timedOut {
+                checks.append(DoctorCheck(
+                    name: "spawn smoke test", status: .fail,
+                    detail: "timed out waiting for xcrun mcpbridge to exit with closed stdin"
+                ))
             } catch {
                 checks.append(DoctorCheck(
                     name: "spawn smoke test", status: .fail, detail: error.localizedDescription
@@ -567,6 +575,32 @@ public struct DoctorInspector: Sendable {
         }
 
         return DoctorReport(checks: checks)
+    }
+
+    private func runSmokeTest(
+        path: String,
+        environment: [String: String]
+    ) async throws -> ProcessResult {
+        try await withThrowingTaskGroup(of: ProcessResult.self) { group in
+            group.addTask {
+                try await processRunner.run(
+                    path, arguments: ["mcpbridge"],
+                    environment: environment,
+                    workingDirectory: nil,
+                    stdinData: Data() // empty stdin, closes immediately
+                )
+            }
+            group.addTask {
+                try await Task.sleep(for: smokeTestTimeout)
+                throw SmokeTestError.timedOut
+            }
+
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else {
+                throw CancellationError()
+            }
+            return result
+        }
     }
 
     // MARK: - Formatting

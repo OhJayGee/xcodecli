@@ -1,5 +1,45 @@
 import Foundation
 
+private final class CancellableProcess: @unchecked Sendable {
+    let process = Process()
+
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func runAndWait() async throws -> Int32 {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            guard !cancelled else {
+                lock.unlock()
+                continuation.resume(throwing: CancellationError())
+                return
+            }
+
+            process.terminationHandler = { process in
+                continuation.resume(returning: process.terminationStatus)
+            }
+            do {
+                try process.run()
+                lock.unlock()
+            } catch {
+                process.terminationHandler = nil
+                lock.unlock()
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        cancelled = true
+        if process.isRunning {
+            process.terminate()
+        }
+    }
+}
+
 /// Result of running an external process.
 public struct ProcessResult: Sendable {
     public let stdout: String
@@ -47,7 +87,8 @@ public struct SystemProcessRunner: ProcessRunning {
         workingDirectory: String?,
         stdinData: Data?
     ) async throws -> ProcessResult {
-        let process = Process()
+        let cancellableProcess = CancellableProcess()
+        let process = cancellableProcess.process
         process.executableURL = URL(fileURLWithPath: command)
         process.arguments = arguments
 
@@ -68,27 +109,40 @@ public struct SystemProcessRunner: ProcessRunning {
             process.standardInput = stdinPipe
             stdinPipe.fileHandleForWriting.write(stdinData)
             stdinPipe.fileHandleForWriting.closeFile()
+        } else {
+            process.standardInput = FileHandle.nullDevice
         }
 
-        try process.run()
+        return try await withTaskCancellationHandler {
+            // Drain pipes concurrently so a child producing more than the pipe
+            // buffer cannot deadlock while the parent waits for termination.
+            let stdoutReader = Task.detached {
+                stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            }
+            let stderrReader = Task.detached {
+                stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            }
 
-        // Read pipe data concurrently with process execution to avoid deadlock.
-        // If the child produces more output than the pipe buffer (64 KB on macOS),
-        // waitUntilExit() and the child's write() would deadlock.
-        // Drain pipes on background threads to prevent deadlock when output
-        // exceeds the pipe buffer (64 KB on macOS).
-        let stdoutReader = Task.detached { stdoutPipe.fileHandleForReading.readDataToEndOfFile() }
-        let stderrReader = Task.detached { stderrPipe.fileHandleForReading.readDataToEndOfFile() }
+            let exitCode: Int32
+            do {
+                exitCode = try await cancellableProcess.runAndWait()
+                try Task.checkCancellation()
+            } catch {
+                stdoutPipe.fileHandleForWriting.closeFile()
+                stderrPipe.fileHandleForWriting.closeFile()
+                throw error
+            }
 
-        process.waitUntilExit()
+            let stdoutData = await stdoutReader.value
+            let stderrData = await stderrReader.value
 
-        let stdoutData = await stdoutReader.value
-        let stderrData = await stderrReader.value
-
-        return ProcessResult(
-            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
-            stderr: String(data: stderrData, encoding: .utf8) ?? "",
-            exitCode: process.terminationStatus
-        )
+            return ProcessResult(
+                stdout: String(data: stdoutData, encoding: .utf8) ?? "",
+                stderr: String(data: stderrData, encoding: .utf8) ?? "",
+                exitCode: exitCode
+            )
+        } onCancel: {
+            cancellableProcess.cancel()
+        }
     }
 }

@@ -1,6 +1,6 @@
-# TODO — Security & Code-Quality Findings
+# Security and Code-Quality Review
 
-Generated from an adversarial security review and a code-quality review of `main` (working tree clean). Severity ordering reflects exploitability and user impact, not effort.
+This is the completed record of an adversarial security review and code-quality review of `main`. All actionable findings have been resolved or explicitly closed by design. Severity ordering reflects exploitability and user impact, not effort.
 
 Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240` (`appendingPathComponent` "double join") was investigated and is **a false positive** — `found` is the PATH directory, so the join correctly produces `<dir>/<argv0>`. Do not change.
 
@@ -112,11 +112,11 @@ Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240
 - **Location:** `Sources/XcodeCLICore/Agent/AgentClient.swift`
 - **Resolution:** `stop()` and `bootout()` failures are silently swallowed (advisory). The new `removeAgentFiles(paths:fileManager:)` helper iterates plist → socket → pid → log → supportDir and rethrows the first failure directly, matching the original Go contract. Pinned by `AgentClientUninstallTests.swift`.
 
-### [~] 24. Minor cleanups (group)
+### [x] 24. Minor cleanups (group) [RESOLVED]
 - **Duplicate dedupe helpers** [RESOLVED — Go side deleted in Phase C]: `cmd/xcodecli/mcp_config.go:576-590` and `internal/agent/status_warnings.go:36-50` no longer exist.
 - **Bespoke UUID v4** [RESOLVED — file deleted in Phase C]: `internal/bridge/session.go:106-119` no longer exists.
-- **`tool inspect` round-trip:** [keep] `Sources/xcodecli/ToolCommand.swift` still lists every tool to find one — fine since the bridge tool set is fixed, but worth a comment so future readers don't think it's a bug.
-- **`doctor` smoke-test branch ordering:** [keep — verify in Swift] Defensive `smokeCtx.Err()` check in the Swift doctor smoke runner remains worth confirming.
+- **`tool inspect` round-trip:** [RESOLVED BY DESIGN] MCP exposes schemas through `tools/list`, not a single-tool lookup. `ToolCommand.swift` now documents why listing Xcode's small, fixed catalog is intentional.
+- **`doctor` smoke-test branch ordering:** [RESOLVED] The Swift doctor now applies the original two-second smoke-test bound, reports timeout before generic process errors, and cancels the process runner. `SystemProcessRunner` responds to cancellation by terminating the spawned child.
 
 ---
 
@@ -133,9 +133,3 @@ Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240
 ### [x] M7/M8. AgentServer reads request frames with no size or time bound [RESOLVED in Phase D3 (commit d8cf642)]
 - **Location:** `Sources/XcodeCLICore/Agent/AgentServer.swift`
 - **Resolution:** Request frame capped at 1 MiB; per-read `SO_RCVTIMEO` of 5 s applied to accepted fds (mirrors the `AgentClient` pattern). Oversized payload returns an error response and closes the connection. Pinned by `AgentServerSocketTests.oversizedRequestRejected`.
-
----
-
-## Suggested execution order (remaining items)
-
-1. **#24** — `tool inspect` comment + doctor smoke-test defensive check.
