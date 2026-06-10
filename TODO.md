@@ -24,9 +24,9 @@ Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240
 - **Location:** `scripts/release_homebrew.sh:179`
 - **Resolution:** All Homebrew/release scripts removed; no formula generation path remains.
 
-### [x] 4. `build-swift.sh` does racy in-place `sed` of `Version.swift` with a predictable tmp backup [RESOLVED in Phase A — build-swift.sh trimmed of version-sync hook (commit 70472c6)]
+### [x] 4. `build-swift.sh` does racy in-place `sed` of `Version.swift` with a predictable tmp backup [RESOLVED]
 - **Location:** `scripts/build-swift.sh:20-32`
-- **Resolution:** The version-sync invocation was removed. `build-swift.sh` no longer mutates `Version.swift` via in-place `sed`; the `VERSION` env var is consumed directly by Swift sources at build time.
+- **Resolution:** `build-swift.sh` no longer mutates `Version.swift`. Debug builds derive the dev channel from `DEBUG`; release builds default to the release channel; `BUILD_CHANNEL=dev` passes `XCODECLI_FORCE_DEV` as a compiler define.
 
 ### [x] 5. Agent socket TOCTOU + chmod-after-listen window [RESOLVED in Phase D1 (commit d5d67f7)]
 - **Location:** `internal/agent/server.go:75-85` (Go tree gone); analogous Swift fix in `Sources/XcodeCLICore/Agent/AgentServer.swift`
@@ -36,18 +36,17 @@ Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240
 - **Location:** `Sources/XcodeCLICore/Update/Updater.swift:95-99`
 - **Resolution:** Updater module entirely removed.
 
-### [ ] 7. `AgentServer` does not hold the pooled session lock across MCP client calls (Swift)
+### [x] 7. `AgentServer` does not hold the pooled session lock across MCP client calls (Swift) [RESOLVED BY DESIGN — no fix needed]
 - **Location:** `Sources/XcodeCLICore/Agent/AgentServer.swift:220-255`
-- **Issue:** Two concurrent requests on the same `SessionKey` can both pass `getOrCreateClient` and call `client.listTools()` / `client.callTool()` concurrently, interleaving JSON-RPC reads on the shared connection. Go held `pooled.mu` for the entire `fn(client)` duration; Swift does not.
-- **Fix:** Acquire a per-session lock that wraps `getOrCreateClient` + the RPC + `finishSession`.
+- **Resolution:** `MCPClient` is a Swift `actor` whose `listTools()`, `callTool()`, and `request()` methods are all **synchronous** (no `async`/`await` inside them). A synchronous actor-isolated method runs to completion with no suspension point, so the actor's own isolation serialises concurrent callers — Task B's `await client.listTools()` queues until Task A returns. The actor subsumes the role of Go's `pooled.mu`. The suggested fix (holding `pooled.lock` across `await client.*`) would be harmful: NSLock held across a suspension point risks deadlocking the cooperative thread pool. Pinned by `AgentServerSocketTests.concurrentSameSessionRequestsStayCoherent`.
 
 ---
 
 ## Medium
 
-### [x] 8. Swift `MCPClient.readEnvelope` reads one byte at a time [RESOLVED — buffered reader (commit 0d1725a)]
+### [x] 8. Swift `MCPClient.readEnvelope` reads one byte at a time [RESOLVED — partial-read buffered reader]
 - **Location:** `Sources/XcodeCLICore/MCP/MCPClient.swift`
-- **Resolution:** Replaced the per-byte loop with a 4 KiB buffered reader (`readBufferedLine` helper + `readBuffer` field on the actor). Pinned by `Tests/XcodeCLICoreTests/MCPClientBufferedReadTests.swift`.
+- **Resolution:** Replaced the per-byte loop with a 4 KiB buffered reader (`readBufferedLine` helper + `readBuffer` field on the actor). The reader uses POSIX `read(2)` so short MCP responses return while the child keeps stdout open; `FileHandle.readData(ofLength:)` incorrectly waited for the full chunk. Pinned by `MCPClientBufferedReadTests.shortLineWithOpenWriter`.
 
 ### [x] 9. Swift `AgentClient.doRPC` has no timeout fallback when `req.timeoutMS` is nil/0 [RESOLVED — finite default timeout always applied (commit 568b79c)]
 - **Location:** `Sources/XcodeCLICore/Agent/AgentClient.swift`
@@ -139,5 +138,4 @@ Note: a previously suggested bug at `Sources/xcodecli/MCPConfigCommand.swift:240
 
 ## Suggested execution order (remaining items)
 
-1. **#7** — Swift session-lock parity gap.
-2. **#24** — `tool inspect` comment + doctor smoke-test defensive check.
+1. **#24** — `tool inspect` comment + doctor smoke-test defensive check.

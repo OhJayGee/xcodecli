@@ -22,7 +22,7 @@ struct VersionTests {
 
     @Test("dev channel is detected correctly")
     func devChannelDetection() {
-        // In dev builds (no sed replacement), buildChannel is "dev"
+        // `swift test` is a debug build, so DEBUG selects the dev channel.
         #expect(Version.buildChannel == "dev")
         #expect(Version.isDev)
     }

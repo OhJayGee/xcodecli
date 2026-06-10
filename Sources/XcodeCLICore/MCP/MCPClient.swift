@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 /// MCP client that communicates with xcrun mcpbridge via JSON-RPC over stdin/stdout.
 public actor MCPClient {
@@ -316,10 +319,27 @@ func readBufferedLine(
             return Data(line)
         }
 
-        // `readData(ofLength:)` is the blocking variant: returns up to
-        // `length` bytes and returns an empty Data on EOF.
-        let chunk = handle.readData(ofLength: chunkSize)
-        if chunk.isEmpty {
+        // FileHandle.readData(ofLength:) can wait for the full requested
+        // length while the writer remains open. MCP responses are usually
+        // much smaller than the 4 KiB chunk size, so use POSIX read(2), which
+        // returns as soon as any pipe bytes are available.
+        var chunk = [UInt8](repeating: 0, count: chunkSize)
+        let count: Int
+        while true {
+            let result = Darwin.read(handle.fileDescriptor, &chunk, chunk.count)
+            if result < 0 && errno == EINTR {
+                continue
+            }
+            count = result
+            break
+        }
+
+        if count < 0 {
+            throw XcodeCLIError.mcpInitializationFailed(
+                reason: "read child stdout: \(String(cString: strerror(errno)))"
+            )
+        }
+        if count == 0 {
             if !buffer.isEmpty {
                 throw XcodeCLIError.mcpInitializationFailed(
                     reason: "child process closed stdout with \(buffer.count) buffered bytes and no newline"
@@ -327,7 +347,7 @@ func readBufferedLine(
             }
             throw XcodeCLIError.mcpInitializationFailed(reason: "child process closed stdout")
         }
-        buffer.append(chunk)
+        buffer.append(contentsOf: chunk[0..<count])
     }
 }
 

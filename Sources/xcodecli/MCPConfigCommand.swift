@@ -48,40 +48,11 @@ struct MCPCommand: AsyncParsableCommand {
         var sessionID: String?
 
         func run() async throws {
-            let executablePath = try resolveCurrentExecutablePath()
-            var result = try buildMCPConfigResult(
-                client: client, mode: mode, name: name,
-                scope: resolveScope(client: client, scope: scope),
-                xcodePID: xcodePID, sessionID: sessionID,
-                executablePath: executablePath
+            try await runMCPConfig(
+                client: client, mode: mode, name: name, scope: scope,
+                install: install, json: json, strictStablePath: strictStablePath,
+                xcodePID: xcodePID, sessionID: sessionID
             )
-
-            try validateMCPConfigExecutablePath(
-                executablePath: executablePath,
-                strictStablePath: strictStablePath,
-                advisory: MCPExecutableAdvisory(
-                    warnings: result.warnings,
-                    suggestedExecutablePath: result.suggestedExecutablePath
-                )
-            )
-
-            if install {
-                result.install = await performMCPConfigInstall(
-                    client: client, name: name,
-                    scope: result.scope ?? "",
-                    result: result
-                )
-            }
-
-            if json {
-                try writePrettyJSON(result)
-            } else {
-                print(formatMCPConfigResult(result))
-            }
-
-            if install && (!result.install.executed || result.install.exitCode != 0) {
-                throw ExitCode(1)
-            }
         }
     }
 
@@ -100,16 +71,11 @@ struct MCPCommand: AsyncParsableCommand {
         @Option(name: .customLong("session-id")) var sessionID: String?
 
         func run() async throws {
-            var cmd = ConfigSubcommand()
-            cmd.client = "codex"
-            cmd.mode = mode
-            cmd.name = name
-            cmd.install = install
-            cmd.json = json
-            cmd.strictStablePath = strictStablePath
-            cmd.xcodePID = xcodePID
-            cmd.sessionID = sessionID
-            try await cmd.run()
+            try await runMCPConfig(
+                client: "codex", mode: mode, name: name, scope: nil,
+                install: install, json: json, strictStablePath: strictStablePath,
+                xcodePID: xcodePID, sessionID: sessionID
+            )
         }
     }
 
@@ -129,17 +95,11 @@ struct MCPCommand: AsyncParsableCommand {
         @Option(name: .customLong("session-id")) var sessionID: String?
 
         func run() async throws {
-            var cmd = ConfigSubcommand()
-            cmd.client = "claude"
-            cmd.mode = mode
-            cmd.name = name
-            cmd.scope = scope
-            cmd.install = install
-            cmd.json = json
-            cmd.strictStablePath = strictStablePath
-            cmd.xcodePID = xcodePID
-            cmd.sessionID = sessionID
-            try await cmd.run()
+            try await runMCPConfig(
+                client: "claude", mode: mode, name: name, scope: scope,
+                install: install, json: json, strictStablePath: strictStablePath,
+                xcodePID: xcodePID, sessionID: sessionID
+            )
         }
     }
 
@@ -159,17 +119,11 @@ struct MCPCommand: AsyncParsableCommand {
         @Option(name: .customLong("session-id")) var sessionID: String?
 
         func run() async throws {
-            var cmd = ConfigSubcommand()
-            cmd.client = "gemini"
-            cmd.mode = mode
-            cmd.name = name
-            cmd.scope = scope
-            cmd.install = install
-            cmd.json = json
-            cmd.strictStablePath = strictStablePath
-            cmd.xcodePID = xcodePID
-            cmd.sessionID = sessionID
-            try await cmd.run()
+            try await runMCPConfig(
+                client: "gemini", mode: mode, name: name, scope: scope,
+                install: install, json: json, strictStablePath: strictStablePath,
+                xcodePID: xcodePID, sessionID: sessionID
+            )
         }
     }
 }
@@ -303,6 +257,53 @@ private struct CommandInvocation {
 private struct MCPExecutableAdvisory {
     let warnings: [String]
     let suggestedExecutablePath: String?
+}
+
+private func runMCPConfig(
+    client: String,
+    mode: String,
+    name: String,
+    scope: String?,
+    install: Bool,
+    json: Bool,
+    strictStablePath: Bool,
+    xcodePID: String?,
+    sessionID: String?
+) async throws {
+    let executablePath = try resolveCurrentExecutablePath()
+    var result = try buildMCPConfigResult(
+        client: client, mode: mode, name: name,
+        scope: resolveScope(client: client, scope: scope),
+        xcodePID: xcodePID, sessionID: sessionID,
+        executablePath: executablePath
+    )
+
+    try validateMCPConfigExecutablePath(
+        executablePath: executablePath,
+        strictStablePath: strictStablePath,
+        advisory: MCPExecutableAdvisory(
+            warnings: result.warnings,
+            suggestedExecutablePath: result.suggestedExecutablePath
+        )
+    )
+
+    if install {
+        result.install = await performMCPConfigInstall(
+            client: client, name: name,
+            scope: result.scope ?? "",
+            result: result
+        )
+    }
+
+    if json {
+        try writePrettyJSON(result)
+    } else {
+        print(formatMCPConfigResult(result))
+    }
+
+    if install && (!result.install.executed || result.install.exitCode != 0) {
+        throw ExitCode(1)
+    }
 }
 
 private func validateMCPConfigExecutablePath(

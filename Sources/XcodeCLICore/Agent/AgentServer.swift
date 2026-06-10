@@ -21,6 +21,8 @@ public struct AgentServerConfig: @unchecked Sendable {
     public let baseEnv: [String: String]
     public let debug: Bool
     public let errOut: FileHandle
+    public let mcpCommand: String
+    public let mcpArguments: [String]
 
     public init(
         paths: AgentPaths.Paths? = nil,
@@ -28,7 +30,9 @@ public struct AgentServerConfig: @unchecked Sendable {
         idleTimeout: TimeInterval = defaultAgentIdleTimeout,
         baseEnv: [String: String] = [:],
         debug: Bool = false,
-        errOut: FileHandle = .standardError
+        errOut: FileHandle = .standardError,
+        mcpCommand: String = "/usr/bin/xcrun",
+        mcpArguments: [String] = ["mcpbridge"]
     ) {
         self.paths = paths ?? AgentPaths.defaultPaths()
         self.label = label
@@ -36,6 +40,8 @@ public struct AgentServerConfig: @unchecked Sendable {
         self.baseEnv = baseEnv
         self.debug = debug
         self.errOut = errOut
+        self.mcpCommand = mcpCommand
+        self.mcpArguments = mcpArguments
     }
 }
 
@@ -328,6 +334,14 @@ public final class AgentServer: @unchecked Sendable {
     }
 
     /// Get existing client or create a new one. Thread-safe via PooledSession lock.
+    ///
+    /// No per-session lock is needed around the RPC calls that follow this method.
+    /// `MCPClient` is a Swift actor whose `listTools()`, `callTool()`, and `request()`
+    /// methods are synchronous (no `await` inside them). A synchronous actor-isolated
+    /// method has no suspension points, so the actor's own isolation serialises
+    /// concurrent callers on the same session — holding `pooled.lock` across
+    /// `await client.*` is unnecessary and would risk deadlocking the cooperative
+    /// thread pool.
     private func getOrCreateClient(pooled: PooledSession, req: AgentRequest) async throws -> MCPClient {
         // Check for existing client synchronously
         let existing: MCPClient? = pooled.lock.withLock { pooled.client }
@@ -339,7 +353,13 @@ public final class AgentServer: @unchecked Sendable {
         if let sid = req.sessionID, !sid.isEmpty { env["MCP_XCODE_SESSION_ID"] = sid }
         if let devDir = req.developerDir, !devDir.isEmpty { env["DEVELOPER_DIR"] = devDir }
 
-        let config = MCPClient.Config(environment: env, debug: false, errOut: cfg.errOut)
+        let config = MCPClient.Config(
+            command: cfg.mcpCommand,
+            arguments: cfg.mcpArguments,
+            environment: env,
+            debug: false,
+            errOut: cfg.errOut
+        )
         let newClient = try await MCPClient.connect(config: config)
 
         // Double-check under lock: another task may have raced us

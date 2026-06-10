@@ -31,6 +31,34 @@ struct MCPClientBufferedReadTests {
         #expect(buffer.isEmpty)
     }
 
+    @Test("returns a short line while the writer remains open")
+    func shortLineWithOpenWriter() throws {
+        let pipe = Pipe()
+        pipe.fileHandleForWriting.write(Data("ready\n".utf8))
+
+        let closer = Task.detached {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            pipe.fileHandleForWriting.closeFile()
+        }
+        defer {
+            closer.cancel()
+            pipe.fileHandleForWriting.closeFile()
+        }
+
+        var buffer = Data()
+        let startedAt = ContinuousClock.now
+        let line = try readBufferedLine(
+            from: pipe.fileHandleForReading,
+            buffer: &buffer,
+            chunkSize: 4096
+        )
+        let elapsed = ContinuousClock.now - startedAt
+
+        #expect(String(data: line, encoding: .utf8) == "ready")
+        #expect(elapsed < .milliseconds(500))
+    }
+
     @Test("returns lines back-to-back from a single chunk")
     func multiLineSingleChunk() throws {
         // Both lines arrive in the same read; second call must come from the

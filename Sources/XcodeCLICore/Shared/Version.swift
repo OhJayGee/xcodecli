@@ -1,13 +1,12 @@
 public enum Version {
     public static let source = "v1.2.1"
-
-    /// Replaced at build time by scripts/build-swift.sh via sed.
-    /// When building with `swift build` directly, stays equal to `source`.
     public static let current: String = source
 
-    /// Build channel: "dev" for local builds, "release" for distribution.
-    /// Replaced at build time by scripts/build-swift.sh via sed.
+    #if DEBUG || XCODECLI_FORCE_DEV
     public static let buildChannel: String = "dev"
+    #else
+    public static let buildChannel: String = "release"
+    #endif
 
     public static var isDev: Bool {
         buildChannel.lowercased().trimmingCharacters(in: .whitespaces) == "dev"

@@ -6,6 +6,15 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0
 
 ## [Unreleased]
 
+### Changed
+- Release builds now derive their build channel from compiler configuration, and `scripts/build-swift.sh` no longer edits `Version.swift`.
+- The README now documents the stable `serve` -> LaunchAgent -> `mcpbridge` proxy model and uses integer timeout examples accepted by the CLI.
+
+### Fixed
+- The MCP client now returns short framed responses while the pooled `mcpbridge` stdout pipe remains open, restoring reliable `tools list`, `tool inspect`, and `tool call` requests through the agent.
+- MCP client aliases, including `mcp codex`, now share the normal configuration path instead of terminating unexpectedly.
+- Same-session concurrency coverage now uses a deterministic fake bridge and exits cleanly.
+
 ## [1.1.0] - 2026-03-29
 ### Added
 - `doctor --json` now emits structured `recommendations` so automation can consume remediation guidance directly.

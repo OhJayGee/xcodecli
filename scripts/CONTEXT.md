@@ -5,10 +5,10 @@
 
 ## Why This Exists
 - These scripts are the destructive edge of the repository.
-- The CLI code can be changed safely in isolation, but script changes affect build outputs and version injection.
+- The CLI code can be changed safely in isolation, but script changes affect build outputs and build-channel selection.
 
 ## Key Files
-- [scripts/build-swift.sh](./build-swift.sh): local reproducible Swift build entrypoint; version/build-channel injection happens via edits to [Sources/XcodeCLICore/Shared/Version.swift](../Sources/XcodeCLICore/Shared/Version.swift).
+- [scripts/build-swift.sh](./build-swift.sh): local reproducible Swift release-build entrypoint; `BUILD_CHANNEL=dev` adds a compiler define without editing source files.
 
 ## Local Rules
 - Destructive steps come last.

@@ -3,33 +3,29 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT="${1:-${OUTPUT:-${ROOT_DIR}/.build/release/xcodecli}}"
-BUILD_CHANNEL="${BUILD_CHANNEL:-dev}"
+BUILD_CHANNEL="${BUILD_CHANNEL:-release}"
 
-# Extract source version from Swift source
 SOURCE_VERSION="$(sed -n 's/.*static let source = "\(.*\)"/\1/p' "${ROOT_DIR}/Sources/XcodeCLICore/Shared/Version.swift" | head -n 1)"
-VERSION="${VERSION:-${SOURCE_VERSION:-v0.0.0}}"
+SWIFT_FLAGS=()
 
-echo "[build-swift] version: ${VERSION}"
+case "$BUILD_CHANNEL" in
+  release)
+    ;;
+  dev)
+    SWIFT_FLAGS=(-Xswiftc -DXCODECLI_FORCE_DEV)
+    ;;
+  *)
+    echo "[build-swift] unsupported BUILD_CHANNEL: ${BUILD_CHANNEL} (expected release or dev)" >&2
+    exit 2
+    ;;
+esac
+
+echo "[build-swift] version: ${SOURCE_VERSION:-v0.0.0}"
 echo "[build-swift] channel: ${BUILD_CHANNEL}"
 echo "[build-swift] output:  ${OUTPUT}"
 
-# Inject version and channel into Version.swift before building
-VERSION_FILE="${ROOT_DIR}/Sources/XcodeCLICore/Shared/Version.swift"
-BACKUP_FILE="$(mktemp "${TMPDIR:-/tmp}/xcodecli-version-swift.XXXXXX")"
-cp "$VERSION_FILE" "$BACKUP_FILE"
-
-cleanup() {
-  if [[ -f "$BACKUP_FILE" ]]; then
-    mv "$BACKUP_FILE" "$VERSION_FILE"
-  fi
-}
-trap cleanup EXIT
-
-sed -i '' "s|public static let current: String = source|public static let current: String = \"${VERSION}\"|" "$VERSION_FILE"
-sed -i '' "s|public static let buildChannel: String = \"dev\"|public static let buildChannel: String = \"${BUILD_CHANNEL}\"|" "$VERSION_FILE"
-
 cd "$ROOT_DIR"
-swift build -c release
+swift build -c release "${SWIFT_FLAGS[@]}"
 
 # Copy to requested output location if different from default
 BUILT_BINARY="${ROOT_DIR}/.build/release/xcodecli"

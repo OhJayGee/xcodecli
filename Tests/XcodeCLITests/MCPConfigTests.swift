@@ -69,13 +69,12 @@ struct MCPConfigTests {
 
     // MARK: - Alias Commands
 
-    @Test("mcp codex --json parses as codex alias (known broken: ConfigSubcommand.client has no default)")
+    @Test("mcp codex --json parses as codex alias")
     func codexAliasJSON() async throws {
-        // CodexAlias creates ConfigSubcommand() then sets cmd.client = "codex",
-        // but @Option without a default crashes on read before assignment.
-        // This test documents the current broken behavior.
         let result = try await runCLI(["mcp", "codex", "--json"])
-        #expect(result.exitCode != 0)
+        #expect(result.exitCode == 0)
+        let output = try decodeMCPConfig(result.stdout)
+        #expect(output.client == "codex")
     }
 
     @Test("mcp claude --json parses as claude alias")

@@ -27,15 +27,23 @@ swift test
 ./scripts/build-swift.sh .tmp/xcodecli
 ```
 
-Override version or build channel:
+Force a dev-channel release build:
 
 ```bash
-VERSION=v1.0.0 BUILD_CHANNEL=release ./scripts/build-swift.sh .tmp/xcodecli
+BUILD_CHANNEL=dev ./scripts/build-swift.sh .tmp/xcodecli
 ```
 
 ## Usage
 
 Running `xcodecli` with no arguments prints help. Use `bridge` for raw passthrough to `xcrun mcpbridge`, or `serve` when an MCP client should talk to `xcodecli` directly while reusing the LaunchAgent-backed runtime.
+
+In the default long-lived proxy mode, an MCP client launches the stable installed
+`xcodecli serve` binary. Each `serve` process forwards tool requests to a per-user
+LaunchAgent, and that agent owns the reusable `xcrun mcpbridge` process. Client
+restarts or upgrades therefore do not replace the Xcode-facing backend while the
+same `{XcodePID, SessionID, DeveloperDir}` key remains active. Xcode authorization
+is still session-scoped rather than a permanent trust grant for the executable, so
+changing that key or stopping the agent can trigger another approval prompt.
 
 ```bash
 ./xcodecli
@@ -118,21 +126,21 @@ List tools through the MCP bridge:
 
 ```bash
 ./xcodecli tools list
-./xcodecli tools list --json --timeout 60s
+./xcodecli tools list --json --timeout 60
 ```
 
 Inspect a single tool before calling it:
 
 ```bash
 ./xcodecli tool inspect XcodeListWindows
-./xcodecli tool inspect XcodeListWindows --json --timeout 60s
+./xcodecli tool inspect XcodeListWindows --json --timeout 60
 ```
 
 Call a single tool with JSON arguments:
 
 ```bash
 ./xcodecli tool call XcodeListWindows --json '{}'
-./xcodecli tool call BuildProject --timeout 30m --json @/tmp/payload.json
+./xcodecli tool call BuildProject --timeout 1800 --json @/tmp/payload.json
 printf '{}' | ./xcodecli tool call XcodeListWindows --json-stdin
 ```
 
