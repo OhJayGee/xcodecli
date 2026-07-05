@@ -51,6 +51,17 @@ struct AgentServerSocketTests {
         return path
     }
 
+    private func makeSilentMCPBridge(in tempDir: String) throws -> String {
+        let path = (tempDir as NSString).appendingPathComponent("silent-mcpbridge.sh")
+        let script = #"""
+        #!/bin/sh
+        /bin/sleep 10
+        """#
+        try script.write(toFile: path, atomically: true, encoding: .utf8)
+        #expect(chmod(path, 0o700) == 0)
+        return path
+    }
+
     @Test("socket file is an S_IFSOCK with mode 0o600 owned by current uid")
     func socketFileInvariants() async throws {
         let tempDir = try makeTempSupportDir()
@@ -166,5 +177,50 @@ struct AgentServerSocketTests {
         try sendStopRequest(socketPath: paths.socketPath)
         _ = try? await runTask.value
         try? await Task.sleep(for: .milliseconds(200))
+    }
+
+    @Test("timed-out tools list discards backend session")
+    func timedOutToolsListDiscardsBackendSession() async throws {
+        let tempDir = try makeTempSupportDir()
+        defer { try? FileManager.default.removeItem(atPath: tempDir) }
+
+        let paths = makePaths(in: tempDir)
+        let silentBridge = try makeSilentMCPBridge(in: tempDir)
+        let cfg = AgentServerConfig(
+            paths: paths,
+            label: "test.xcodecli.agent",
+            idleTimeout: 60,
+            baseEnv: [:],
+            debug: false,
+            mcpCommand: silentBridge,
+            mcpArguments: []
+        )
+        let server = AgentServer(config: cfg)
+        let runTask = Task { try await server.run() }
+
+        await waitForFile(paths.socketPath, deadline: Date().addingTimeInterval(2.0))
+        #expect(FileManager.default.fileExists(atPath: paths.socketPath))
+
+        let response = try sendRequest(
+            socketPath: paths.socketPath,
+            json: #"{"method":"tools/list","timeoutMS":100,"xcodePID":"42","sessionID":"timeout-session"}"#,
+            timeout: 2.0
+        )
+        let decoded = try JSONDecoder().decode(AgentResponse.self, from: Data(response.utf8))
+        let error = decoded.error ?? ""
+        #expect(
+            error.contains("MCP initialize")
+                || error.contains("MCP tools/list")
+                || error.contains("timeout")
+        )
+        #expect(error.contains("xcrun mcpbridge"))
+        #expect(error.contains("discarded backend session"))
+
+        let statusResponse = try sendRequest(socketPath: paths.socketPath, json: #"{"method":"status"}"#)
+        let status = try JSONDecoder().decode(AgentResponse.self, from: Data(statusResponse.utf8))
+        #expect(status.status?.backendSessions == 0)
+
+        try sendStopRequest(socketPath: paths.socketPath)
+        _ = try? await runTask.value
     }
 }

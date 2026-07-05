@@ -63,9 +63,14 @@ public actor MCPClient {
     }
 
     /// Start a new MCP client with initialized session.
-    public static func connect(config: Config) async throws -> MCPClient {
+    public static func connect(config: Config, timeoutMS: Int64? = nil) async throws -> MCPClient {
         let client = try MCPClient(config: config)
-        try await client.initialize()
+        do {
+            try await client.initialize(timeoutMS: timeoutMS)
+        } catch {
+            await client.abort()
+            throw error
+        }
         return client
     }
 
@@ -114,7 +119,7 @@ public actor MCPClient {
     }
 
     /// Perform the MCP initialize handshake.
-    private func initialize() throws {
+    private func initialize(timeoutMS: Int64?) throws {
         let initResult = try request(method: "initialize", params: .object([
             "protocolVersion": .string(MCPConstants.requestProtocolVersion),
             "capabilities": .object([:]),
@@ -122,7 +127,7 @@ public actor MCPClient {
                 "name": .string("xcodecli"),
                 "version": .string(Version.current),
             ]),
-        ]))
+        ]), timeoutMS: timeoutMS)
 
         // Verify protocol version
         if case .object(let obj) = initResult,
@@ -137,9 +142,11 @@ public actor MCPClient {
     }
 
     /// Send a JSON-RPC request and wait for the response.
-    public func request(method: String, params: JSONValue) throws -> JSONValue {
+    public func request(method: String, params: JSONValue, timeoutMS: Int64? = nil) throws -> JSONValue {
         let id = nextID
         nextID += 1
+        let started = ContinuousClock.now
+        let budgetMS = normalizedMCPTimeoutMS(timeoutMS)
 
         if debug {
             errOut.write(Data("[debug] mcp request -> \(method) (id=\(id))\n".utf8))
@@ -153,7 +160,11 @@ public actor MCPClient {
         // Read responses until we get ours
         while true {
             try Task.checkCancellation()
-            let response = try readEnvelope()
+            let response = try readEnvelope(
+                timeoutMS: budgetMS,
+                started: started,
+                action: "MCP \(method)"
+            )
 
             if debug {
                 errOut.write(Data("[debug] mcp recv\n".utf8))
@@ -191,7 +202,7 @@ public actor MCPClient {
     }
 
     /// List available MCP tools with cursor-based pagination.
-    public func listTools() throws -> [JSONValue] {
+    public func listTools(timeoutMS: Int64? = nil) throws -> [JSONValue] {
         var allTools: [JSONValue] = []
         var cursor: String = ""
 
@@ -200,7 +211,7 @@ public actor MCPClient {
             if !cursor.isEmpty {
                 params["cursor"] = .string(cursor)
             }
-            let result = try request(method: "tools/list", params: .object(params))
+            let result = try request(method: "tools/list", params: .object(params), timeoutMS: timeoutMS)
             if case .object(let obj) = result {
                 if case .array(let tools) = obj["tools"] {
                     allTools.append(contentsOf: tools)
@@ -216,11 +227,15 @@ public actor MCPClient {
     }
 
     /// Call an MCP tool.
-    public func callTool(name: String, arguments: [String: JSONValue]) throws -> MCPCallResult {
+    public func callTool(
+        name: String,
+        arguments: [String: JSONValue],
+        timeoutMS: Int64? = nil
+    ) throws -> MCPCallResult {
         let result = try request(method: "tools/call", params: .object([
             "name": .string(name),
             "arguments": .object(arguments),
-        ]))
+        ]), timeoutMS: timeoutMS)
 
         var resultDict: [String: JSONValue] = [:]
         var isError = false
@@ -264,9 +279,13 @@ public actor MCPClient {
         stdinPipe.fileHandleForWriting.write(Data(line.utf8))
     }
 
-    private func readEnvelope() throws -> RPCEnvelope {
+    private func readEnvelope(
+        timeoutMS: Int64?,
+        started: ContinuousClock.Instant,
+        action: String
+    ) throws -> RPCEnvelope {
         while true {
-            let lineData = try readLineBuffered()
+            let lineData = try readLineBuffered(timeoutMS: timeoutMS, started: started, action: action)
 
             guard let line = String(data: lineData, encoding: .utf8) else {
                 throw XcodeCLIError.mcpRPCError(code: -32700, message: "invalid UTF-8 in response")
@@ -284,13 +303,44 @@ public actor MCPClient {
     /// Read one newline-terminated line from the child's stdout, buffering any
     /// bytes that arrive past the newline for the next call. The returned
     /// `Data` does not include the trailing `\n`.
-    private func readLineBuffered() throws -> Data {
+    private func readLineBuffered(
+        timeoutMS: Int64?,
+        started: ContinuousClock.Instant,
+        action: String
+    ) throws -> Data {
         try readBufferedLine(
             from: stdoutPipe.fileHandleForReading,
             buffer: &readBuffer,
-            chunkSize: MCPClient.readChunkSize
+            chunkSize: MCPClient.readChunkSize,
+            timeoutMS: timeoutMS,
+            started: started,
+            action: action
         )
     }
+}
+
+private func normalizedMCPTimeoutMS(_ timeoutMS: Int64?) -> Int64? {
+    guard let timeoutMS, timeoutMS > 0 else { return nil }
+    return timeoutMS
+}
+
+private func elapsedMS(since started: ContinuousClock.Instant) -> Int64 {
+    let elapsed = ContinuousClock.now - started
+    return Int64(elapsed.components.seconds) * 1000 +
+        Int64(elapsed.components.attoseconds / 1_000_000_000_000_000)
+}
+
+private func remainingMCPTimeoutMS(
+    budgetMS: Int64?,
+    started: ContinuousClock.Instant,
+    action: String
+) throws -> Int32 {
+    guard let budgetMS else { return -1 }
+    let remaining = budgetMS - elapsedMS(since: started)
+    guard remaining > 0 else {
+        throw XcodeCLIError.agentTimeout(action: action, budgetMS: budgetMS)
+    }
+    return remaining > Int64(Int32.max) ? Int32.max : Int32(remaining)
 }
 
 /// Read one newline-terminated line from `handle`, draining `buffer` first
@@ -307,7 +357,10 @@ public actor MCPClient {
 func readBufferedLine(
     from handle: FileHandle,
     buffer: inout Data,
-    chunkSize: Int
+    chunkSize: Int,
+    timeoutMS: Int64? = nil,
+    started: ContinuousClock.Instant = ContinuousClock.now,
+    action: String = "MCP response"
 ) throws -> Data {
     let newline = UInt8(ascii: "\n")
 
@@ -323,6 +376,24 @@ func readBufferedLine(
         // length while the writer remains open. MCP responses are usually
         // much smaller than the 4 KiB chunk size, so use POSIX read(2), which
         // returns as soon as any pipe bytes are available.
+        let timeout = try remainingMCPTimeoutMS(budgetMS: timeoutMS, started: started, action: action)
+        var pollFD = pollfd(fd: handle.fileDescriptor, events: Int16(POLLIN), revents: 0)
+        while true {
+            let pollResult = poll(&pollFD, 1, timeout)
+            if pollResult < 0 && errno == EINTR {
+                continue
+            }
+            if pollResult == 0 {
+                throw XcodeCLIError.agentTimeout(action: action, budgetMS: timeoutMS ?? 0)
+            }
+            if pollResult < 0 {
+                throw XcodeCLIError.mcpInitializationFailed(
+                    reason: "poll child stdout: \(String(cString: strerror(errno)))"
+                )
+            }
+            break
+        }
+
         var chunk = [UInt8](repeating: 0, count: chunkSize)
         let count: Int
         while true {

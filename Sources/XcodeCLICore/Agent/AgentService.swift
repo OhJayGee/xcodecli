@@ -27,6 +27,20 @@ public func effectiveAgentRPCTimeoutMS(requested: Int64?) -> Int64 {
     return value
 }
 
+/// Return the timeout passed to the underlying MCP bridge operation.
+///
+/// The agent socket uses `AgentRequest.timeoutMS` as the caller-facing RPC
+/// deadline. The bridge work must time out slightly before that deadline so
+/// the LaunchAgent has time to encode and write a diagnostic response instead
+/// of racing the client's socket timeout.
+public func effectiveMCPBackendTimeoutMS(requested: Int64?) -> Int64? {
+    guard let value = requested, value > 0 else { return nil }
+    if value <= 1_000 {
+        return max(value / 2, 1)
+    }
+    return value - 1_000
+}
+
 /// Agent RPC request for communicating with the LaunchAgent.
 public struct AgentRequest: Codable, Sendable {
     public var method: String

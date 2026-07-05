@@ -302,13 +302,13 @@ public final class AgentServer: @unchecked Sendable {
 
         do {
             let client = try await getOrCreateClient(pooled: pooled, req: req)
-            let tools = try await client.listTools()
+            let tools = try await client.listTools(timeoutMS: effectiveMCPBackendTimeoutMS(requested: req.timeoutMS))
             finishSession(pooled)
             return AgentResponse(tools: tools)
         } catch {
             discardClient(pooled)
             finishSession(pooled)
-            return AgentResponse(error: error.localizedDescription)
+            return AgentResponse(error: bridgeFailureMessage(error))
         }
     }
 
@@ -323,14 +323,30 @@ public final class AgentServer: @unchecked Sendable {
 
         do {
             let client = try await getOrCreateClient(pooled: pooled, req: req)
-            let result = try await client.callTool(name: toolName, arguments: req.arguments ?? [:])
+            let result = try await client.callTool(
+                name: toolName,
+                arguments: req.arguments ?? [:],
+                timeoutMS: effectiveMCPBackendTimeoutMS(requested: req.timeoutMS)
+            )
             finishSession(pooled)
             return AgentResponse(result: result.result, isError: result.isError ? true : nil)
         } catch {
             discardClient(pooled)
             finishSession(pooled)
-            return AgentResponse(error: error.localizedDescription)
+            return AgentResponse(error: bridgeFailureMessage(error))
         }
+    }
+
+    private func bridgeFailureMessage(_ error: Error) -> String {
+        if let xcodeError = error as? XcodeCLIError {
+            switch xcodeError {
+            case .agentTimeout(let action, let budgetMS):
+                return "\(action) timed out after \(budgetMS)ms while waiting for xcrun mcpbridge; discarded backend session"
+            default:
+                break
+            }
+        }
+        return error.localizedDescription
     }
 
     /// Get existing client or create a new one. Thread-safe via PooledSession lock.
@@ -360,7 +376,10 @@ public final class AgentServer: @unchecked Sendable {
             debug: false,
             errOut: cfg.errOut
         )
-        let newClient = try await MCPClient.connect(config: config)
+        let newClient = try await MCPClient.connect(
+            config: config,
+            timeoutMS: effectiveMCPBackendTimeoutMS(requested: req.timeoutMS)
+        )
 
         // Double-check under lock: another task may have raced us
         let winner: MCPClient = pooled.lock.withLock {

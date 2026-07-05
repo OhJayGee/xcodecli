@@ -119,6 +119,30 @@ struct MCPClientBufferedReadTests {
         }
     }
 
+    @Test("open writer with no newline respects timeout")
+    func openWriterNoNewlineTimesOut() throws {
+        let pipe = Pipe()
+        defer { pipe.fileHandleForWriting.closeFile() }
+
+        var buffer = Data()
+        do {
+            _ = try readBufferedLine(
+                from: pipe.fileHandleForReading,
+                buffer: &buffer,
+                chunkSize: 4096,
+                timeoutMS: 50,
+                started: ContinuousClock.now,
+                action: "test read"
+            )
+            Issue.record("expected timeout")
+        } catch let XcodeCLIError.agentTimeout(action, budgetMS) {
+            #expect(action == "test read")
+            #expect(budgetMS == 50)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+    }
+
     @Test("EOF after partial line throws and mentions buffered bytes")
     func eofMidLine() throws {
         let pipe = Pipe()

@@ -38,6 +38,15 @@ struct AgentClientTimeoutTests {
         #expect(effectiveAgentRPCTimeoutMS(requested: 1_800_000) == 1_800_000)
     }
 
+    @Test("backend MCP timeout leaves room for agent response")
+    func backendTimeoutLeavesResponseMargin() {
+        #expect(effectiveMCPBackendTimeoutMS(requested: nil) == nil)
+        #expect(effectiveMCPBackendTimeoutMS(requested: 0) == nil)
+        #expect(effectiveMCPBackendTimeoutMS(requested: 100) == 50)
+        #expect(effectiveMCPBackendTimeoutMS(requested: 20_000) == 19_000)
+        #expect(effectiveMCPBackendTimeoutMS(requested: 1_800_000) == 1_799_000)
+    }
+
     @Test("default is finite and at least one second")
     func defaultIsSane() {
         // A regression that drops the constant to 0 or to a sub-second value
