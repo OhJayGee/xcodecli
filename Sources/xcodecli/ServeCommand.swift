@@ -37,18 +37,23 @@ struct ServeCommand: AsyncParsableCommand {
         let effective = resolved.envOptions
         let bridgeEnv = EnvOptions.applyOverrides(baseEnv: env, opts: effective)
 
-        // Build agent request for tool operations via LaunchAgent
+        // Base agent request for tool operations via LaunchAgent. Each handler
+        // below applies the timeout that matches the MCP operation.
         let agentRequest = buildAgentRequest(
             env: bridgeEnv, effective: effective, timeout: 0, debug: debug
         )
 
         let handler = MCPServerHandler(
             listTools: {
-                try await AgentClient.listTools(request: agentRequest)
+                try await AgentClient.listTools(
+                    request: serveListToolsRequest(base: agentRequest)
+                )
             },
             callTool: { name, arguments in
                 try await AgentClient.callTool(
-                    request: agentRequest, name: name, arguments: arguments
+                    request: serveToolCallRequest(base: agentRequest, toolName: name),
+                    name: name,
+                    arguments: arguments
                 )
             }
         )

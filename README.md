@@ -242,5 +242,5 @@ The project now uses stable semantic versioning tags with the following release 
 - `doctor` will warn when the registered LaunchAgent binary path is relative, missing, or differs from the current binary because those drifts are common causes of LaunchAgent bootstrap failures and unexpected re-authorization churn.
 - `agent status` surfaces the same stale-registration warnings in human-readable mode so you can triage LaunchAgent drift without running the full doctor flow first.
 - `doctor --json` now includes structured `recommendations` alongside raw checks so automation can act on common remediation paths directly.
-- Default request timeouts are `60s` for `tools list` and `tool inspect`; `tool call` uses tool-specific defaults (`60s` list/read/search/log, `120s` update/write/refresh, `30m` build/test, `5m` fallback).
+- Default request timeouts are `60s` for `tools list` and `tool inspect`; `tool call` uses tool-specific defaults (`60s` list/read/search/log, `120s` update/write/refresh, `30m` build/test, `5m` fallback). `xcodecli serve` applies the same tool-specific defaults when proxying MCP `tools/call` requests through the LaunchAgent.
 - `tool call` accepts exactly one payload source: inline `--json`, `--json @file`, or `--json-stdin`.

@@ -46,3 +46,23 @@ func buildBridgeRequest(
         timeout: timeout, debug: debug
     )
 }
+
+/// Return a copy of an agent request with a concrete per-request timeout.
+func agentRequestWithTimeout(_ request: AgentRequest, timeout: TimeInterval) -> AgentRequest {
+    var adjusted = request
+    adjusted.timeoutMS = Int64(timeout * 1000)
+    return adjusted
+}
+
+/// Timeout policy for the `tools/list` request used by `xcodecli serve`.
+func serveListToolsRequest(base request: AgentRequest) -> AgentRequest {
+    agentRequestWithTimeout(request, timeout: TimeoutPolicy.readTimeout)
+}
+
+/// Timeout policy for a proxied `tools/call` request used by `xcodecli serve`.
+func serveToolCallRequest(base request: AgentRequest, toolName: String) -> AgentRequest {
+    agentRequestWithTimeout(
+        request,
+        timeout: TimeoutPolicy.defaultToolCallTimeout(toolName: toolName)
+    )
+}

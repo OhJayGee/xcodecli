@@ -62,4 +62,36 @@ struct BridgeRequestSupportTests {
             )
         }
     }
+
+    @Test("serve tools/list request uses read timeout and preserves session fields")
+    func serveListToolsTimeout() {
+        let base = AgentRequest(
+            method: "",
+            timeoutMS: 0,
+            xcodePID: "12345",
+            sessionID: "11111111-1111-1111-1111-111111111111",
+            developerDir: "/Applications/Xcode.app/Contents/Developer",
+            debug: true
+        )
+
+        let request = serveListToolsRequest(base: base)
+
+        #expect(request.timeoutMS == 60_000)
+        #expect(request.xcodePID == base.xcodePID)
+        #expect(request.sessionID == base.sessionID)
+        #expect(request.developerDir == base.developerDir)
+        #expect(request.debug == base.debug)
+    }
+
+    @Test("serve tools/call request uses tool-specific timeout")
+    func serveToolCallTimeout() {
+        let base = AgentRequest(method: "", timeoutMS: 0)
+
+        #expect(serveToolCallRequest(base: base, toolName: "RunAllTests").timeoutMS == 1_800_000)
+        #expect(serveToolCallRequest(base: base, toolName: "RunSomeTests").timeoutMS == 1_800_000)
+        #expect(serveToolCallRequest(base: base, toolName: "BuildProject").timeoutMS == 1_800_000)
+        #expect(serveToolCallRequest(base: base, toolName: "XcodeRead").timeoutMS == 60_000)
+        #expect(serveToolCallRequest(base: base, toolName: "XcodeWrite").timeoutMS == 120_000)
+        #expect(serveToolCallRequest(base: base, toolName: "UnknownTool").timeoutMS == 300_000)
+    }
 }
